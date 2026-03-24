@@ -10,7 +10,7 @@ classes/
 *.launch
 
 # idea
-
+*.md
 .idea/
 *.iml
 *.ipr
@@ -38,6 +38,3 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
-
-# project documentation
-PROJECT_SUMMARY.md

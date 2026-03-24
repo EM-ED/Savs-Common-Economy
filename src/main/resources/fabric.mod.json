@@ -17,22 +17,15 @@
 	"entrypoints": {
 		"main": [
 			"savage.commoneconomy.SavsCommonEconomy"
-		],
-		"fabric-datagen": [
-			"savage.commoneconomy.SavsCommonEconomyDataGenerator"
 		]
 	},
 	"mixins": [
 		"savs-common-economy.mixins.json"
 	],
-	"accessWidener": "savs-common-economy.accesswidener",
 	"depends": {
-		"fabricloader": ">=0.17.3",
-		"minecraft": "~1.21.10",
-		"java": ">=21",
+		"fabricloader": ">=0.18.4",
+		"minecraft": "~26.1-",
+		"java": ">=25",
 		"fabric-api": "*"
-	},
-	"suggests": {
-		"another-mod": "*"
 	}
 }
