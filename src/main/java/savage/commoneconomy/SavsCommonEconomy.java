@@ -35,6 +35,7 @@ public class SavsCommonEconomy implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			EconomyCommands.register(dispatcher);
 			AdminEconomyCommands.register(dispatcher);
+			savage.commoneconomy.command.LogCommand.register(dispatcher);
 		});
 
 		// Register Player Join Hook
