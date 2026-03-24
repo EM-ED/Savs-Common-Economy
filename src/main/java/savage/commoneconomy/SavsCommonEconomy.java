@@ -2,6 +2,7 @@ package savage.commoneconomy;
 
 import net.fabricmc.api.ModInitializer;
 
+import savage.commoneconomy.config.ConfigManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,5 +21,8 @@ public class SavsCommonEconomy implements ModInitializer {
 		// Proceed with mild caution.
 
 		LOGGER.info("Savs Common Economy is initializing for Minecraft 26.1...");
+		
+		// Load Configuration
+		ConfigManager.load();
 	}
 }
