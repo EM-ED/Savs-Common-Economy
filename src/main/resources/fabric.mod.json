@@ -3,13 +3,13 @@
 	"id": "savs-common-economy",
 	"version": "${version}",
 	"name": "Savs Common Economy",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "A comprehensive economy mod for Minecraft 26.1, featuring physical currency, bank notes, chest shops, and cross-server synchronization.",
 	"authors": [
-		"Me!"
+		"xSaVageAU"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/xSaVageAU/Savs-Common-Economy",
+		"sources": "https://github.com/xSaVageAU/Savs-Common-Economy"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/savs-common-economy/icon.png",
