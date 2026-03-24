@@ -49,5 +49,8 @@ public class SavsCommonEconomy implements ModInitializer {
 			EconomyManager.getInstance().shutdown();
 			TransactionLogger.shutdown();
 		});
+
+		// Listeners
+		savage.commoneconomy.listener.BankNoteListener.register();
 	}
 }

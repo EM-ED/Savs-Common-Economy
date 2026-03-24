@@ -11,6 +11,11 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
 import savage.commoneconomy.EconomyManager;
 import savage.commoneconomy.model.AccountData;
 import savage.commoneconomy.util.PermissionsHelper;
@@ -59,6 +64,11 @@ public class EconomyCommands {
                         .suggests(PLAYER_SUGGESTIONS)
                         .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
                                 .executes(EconomyCommands::pay))));
+
+        dispatcher.register(Commands.literal("withdraw")
+                .requires(source -> PermissionsHelper.check(source, "savscommoneconomy.command.withdraw", true))
+                .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.01))
+                        .executes(EconomyCommands::withdraw)));
 
         // /baltop and /balancetop
         var baltopCommand = Commands.literal("baltop")
@@ -120,6 +130,36 @@ public class EconomyCommands {
             }
             
             TransactionLogger.log("PAY", sender.getName().getString(), targetName, amount, "Player Payment");
+            return 1;
+        } else {
+            context.getSource().sendFailure(Component.literal("Insufficient funds."));
+            return 0;
+        }
+    }
+
+    private static int withdraw(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        ServerPlayer sender = context.getSource().getPlayerOrException();
+        double amountDouble = DoubleArgumentType.getDouble(context, "amount");
+        BigDecimal amount = BigDecimal.valueOf(amountDouble);
+
+        if (EconomyManager.getInstance().removeBalance(sender.getUUID(), amount)) {
+            ItemStack note = new ItemStack(Items.PAPER);
+            
+            CompoundTag tag = new CompoundTag();
+            tag.putBoolean("EconomyBankNote", true);
+            tag.putDouble("Value", amountDouble);
+            note.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+            
+            note.set(DataComponents.CUSTOM_NAME, 
+                Component.literal("Bank Note: " + EconomyManager.getInstance().format(amount))
+                    .withStyle(net.minecraft.ChatFormatting.GREEN));
+
+            if (!sender.getInventory().add(note)) {
+                sender.drop(note, false);
+            }
+            
+            context.getSource().sendSuccess(() -> Component.literal("Withdrew " + EconomyManager.getInstance().format(amount) + " as a bank note."), false);
+            TransactionLogger.log("WITHDRAW", sender.getName().getString(), "Bank Note", amount, "Withdrawal");
             return 1;
         } else {
             context.getSource().sendFailure(Component.literal("Insufficient funds."));
