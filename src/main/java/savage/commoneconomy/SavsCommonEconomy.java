@@ -2,7 +2,13 @@ package savage.commoneconomy;
 
 import net.fabricmc.api.ModInitializer;
 
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import savage.commoneconomy.command.AdminEconomyCommands;
+import savage.commoneconomy.command.EconomyCommands;
 import savage.commoneconomy.config.ConfigManager;
+import savage.commoneconomy.EconomyManager;
+import savage.commoneconomy.util.TransactionLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,5 +30,23 @@ public class SavsCommonEconomy implements ModInitializer {
 		
 		// Load Configuration
 		ConfigManager.load();
+
+		// Register Commands
+		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+			EconomyCommands.register(dispatcher);
+			AdminEconomyCommands.register(dispatcher);
+		});
+
+		// Register Player Join Hook
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			EconomyManager.getInstance().getOrCreateAccount(handler.getPlayer().getUUID(), handler.getPlayer().getName().getString());
+		});
+
+		// Register Shutdown Hook
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+			LOGGER.info("Savs Common Economy is shutting down...");
+			EconomyManager.getInstance().shutdown();
+			TransactionLogger.shutdown();
+		});
 	}
 }

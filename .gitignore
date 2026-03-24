@@ -10,6 +10,7 @@ classes/
 *.launch
 
 # idea
+*.txt
 *.md
 .idea/
 *.iml

@@ -28,7 +28,7 @@ dependencies {
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 	
 	// Caching
-	implementation "com.github.ben-manes.caffeine:caffeine:${project.caffeine_version}"
+	include(implementation("com.github.ben-manes.caffeine:caffeine:${project.caffeine_version}"))
 }
 
 processResources {

@@ -4,10 +4,14 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import savage.commoneconomy.config.ConfigManager;
 import savage.commoneconomy.model.AccountData;
+import savage.commoneconomy.storage.EconomyStorage;
+import savage.commoneconomy.storage.JsonStorage;
 
 import java.math.BigDecimal;
-import java.util.UUID;
+import java.text.DecimalFormat;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * The central logic for the Savs Common Economy mod.
@@ -18,8 +22,10 @@ public class EconomyManager {
     
     // In-memory cache for player accounts
     private final Cache<UUID, AccountData> accountCache;
+    private final EconomyStorage storage;
 
     private EconomyManager() {
+        this.storage = new JsonStorage(); // Default to JSON for Phase 2
         this.accountCache = Caffeine.newBuilder()
                 .expireAfterAccess(30, TimeUnit.MINUTES)
                 .maximumSize(5000)
@@ -37,13 +43,11 @@ public class EconomyManager {
      * Gets a player's balance. Defaults to configured starting balance if account missing.
      */
     public BigDecimal getBalance(UUID uuid) {
-        AccountData account = accountCache.getIfPresent(uuid);
-        if (account != null) {
-            return account.getBalance();
-        }
-        
-        // This is a placeholder for storage lookup in Phase 2
-        return ConfigManager.getConfig().defaultBalance;
+        AccountData account = accountCache.get(uuid, k -> {
+            AccountData stored = storage.loadAccount(uuid);
+            return stored != null ? stored : new AccountData("Unknown", ConfigManager.getConfig().defaultBalance);
+        });
+        return account.getBalance();
     }
 
     /**
@@ -57,7 +61,7 @@ public class EconomyManager {
         account.setBalance(account.getBalance().add(amount));
         account.incrementVersion();
         
-        // Invalidate/Sync logic will go here in Phase 5
+        storage.saveAccount(uuid, account);
         return true;
     }
 
@@ -75,14 +79,37 @@ public class EconomyManager {
         
         account.setBalance(account.getBalance().subtract(amount));
         account.incrementVersion();
+        
+        storage.saveAccount(uuid, account);
         return true;
     }
 
     /**
-     * Internal helper to ensure an account exists in the cache.
+     * Internal helper to ensure an account exists in the cache and storage.
      */
-    private AccountData getOrCreateAccount(UUID uuid) {
-        return accountCache.get(uuid, k -> new AccountData("Unknown", ConfigManager.getConfig().defaultBalance));
+    public AccountData getOrCreateAccount(UUID uuid) {
+        return getOrCreateAccount(uuid, null);
+    }
+
+    /**
+     * Internal helper to ensure an account exists in the cache and storage.
+     * Updates name if provided and different.
+     */
+    public AccountData getOrCreateAccount(UUID uuid, String name) {
+        return accountCache.get(uuid, k -> {
+            AccountData stored = storage.loadAccount(uuid);
+            if (stored != null) {
+                if (name != null && !name.equals(stored.getName())) {
+                    stored.setName(name);
+                    storage.saveAccount(uuid, stored);
+                }
+                return stored;
+            }
+            
+            AccountData newAccount = new AccountData(name != null ? name : "Unknown", ConfigManager.getConfig().defaultBalance);
+            storage.saveAccount(uuid, newAccount);
+            return newAccount;
+        });
     }
 
     /**
@@ -92,15 +119,69 @@ public class EconomyManager {
         AccountData account = getOrCreateAccount(uuid);
         account.setBalance(balance);
         account.incrementVersion();
+        storage.saveAccount(uuid, account);
+    }
+
+    /**
+     * Resets a player's balance to the default starting balance.
+     */
+    public void resetBalance(UUID uuid) {
+        setBalance(uuid, ConfigManager.getConfig().defaultBalance);
     }
 
     public boolean hasAccount(UUID uuid) {
-        // Will be expanded in Phase 2 with storage checks
-        return accountCache.getIfPresent(uuid) != null;
+        return accountCache.getIfPresent(uuid) != null || storage.loadAccount(uuid) != null;
     }
 
     public void createAccount(UUID uuid, String name) {
         AccountData account = new AccountData(name, ConfigManager.getConfig().defaultBalance);
         accountCache.put(uuid, account);
+        storage.saveAccount(uuid, account);
+    }
+
+    /**
+     * Formats a balance with the configured currency symbol.
+     */
+    public String format(BigDecimal balance) {
+        DecimalFormat df = new DecimalFormat("#,##0.00");
+        String symbol = ConfigManager.getConfig().currencySymbol;
+        return symbol + df.format(balance);
+    }
+
+    /**
+     * Returns the top accounts for baltop.
+     */
+    public List<AccountData> getTopAccounts(int limit) {
+        return storage.loadAllAccounts().values().stream()
+                .sorted((a, b) -> b.getBalance().compareTo(a.getBalance()))
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Looks up a UUID by player name from the storage.
+     */
+    public UUID getUUIDFromName(String name) {
+        return storage.loadAllAccounts().entrySet().stream()
+                .filter(entry -> entry.getValue().getName().equalsIgnoreCase(name))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Gets all known player names (for suggestions).
+     */
+    public List<String> getAllPlayerNames() {
+        return storage.loadAllAccounts().values().stream()
+                .map(AccountData::getName)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Gracefully shuts down the economy engine.
+     */
+    public void shutdown() {
+        storage.shutdown();
     }
 }
