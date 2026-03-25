@@ -10,6 +10,9 @@ import savage.commoneconomy.storage.JsonStorage;
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -22,14 +25,38 @@ public class EconomyManager {
     
     // In-memory cache for player accounts
     private final Cache<UUID, AccountData> accountCache;
-    private final EconomyStorage storage;
+    private EconomyStorage storage;
+    
+    // Dedicated thread pool for DB/Redis IO
+    private final ExecutorService ioExecutor;
 
     private EconomyManager() {
-        this.storage = new JsonStorage(); // Default to JSON for Phase 2
+        this.ioExecutor = Executors.newFixedThreadPool(4, r -> {
+            Thread t = new Thread(r, "SavsEconomy-IO");
+            t.setDaemon(true);
+            return t;
+        });
+        
         this.accountCache = Caffeine.newBuilder()
                 .expireAfterAccess(30, TimeUnit.MINUTES)
                 .maximumSize(5000)
                 .build();
+                
+        initStorage();
+    }
+    
+    private void initStorage() {
+        var config = ConfigManager.getConfig();
+        if (config.storage.type == savage.commoneconomy.config.EconomyConfig.StorageType.MYSQL || 
+            config.storage.type == savage.commoneconomy.config.EconomyConfig.StorageType.POSTGRESQL) {
+            this.storage = new savage.commoneconomy.storage.SqlStorage(ioExecutor);
+        } else {
+            this.storage = new JsonStorage(ioExecutor);
+        }
+    }
+
+    public void invalidateCache(UUID uuid) {
+        accountCache.invalidate(uuid);
     }
 
     public static EconomyManager getInstance() {
@@ -39,104 +66,116 @@ public class EconomyManager {
         return INSTANCE;
     }
 
-    /**
-     * Gets a player's balance. Defaults to configured starting balance if account missing.
-     */
-    public BigDecimal getBalance(UUID uuid) {
-        AccountData account = accountCache.get(uuid, k -> {
-            AccountData stored = storage.loadAccount(uuid);
-            return stored != null ? stored : new AccountData("Unknown", ConfigManager.getConfig().defaultBalance);
-        });
-        return account.getBalance();
+    public ExecutorService getIoExecutor() {
+        return ioExecutor;
     }
 
     /**
-     * Adds balance to a player's account.
-     * @return true if successful.
+     * Gets a player's balance asynchronously.
      */
-    public boolean addBalance(UUID uuid, BigDecimal amount) {
-        if (amount.compareTo(BigDecimal.ZERO) < 0) return false;
-        
-        AccountData account = getOrCreateAccount(uuid);
-        account.setBalance(account.getBalance().add(amount));
-        account.incrementVersion();
-        
-        storage.saveAccount(uuid, account);
-        return true;
+    public CompletableFuture<BigDecimal> getBalance(UUID uuid) {
+        return getOrCreateAccount(uuid, null).thenApply(AccountData::getBalance);
     }
 
     /**
-     * Removes balance from a player's account.
-     * @return true if successful (fails if insufficient funds).
+     * Adds balance to a player's account asynchronously.
+     * @return CompletableFuture completing with true if successful.
      */
-    public boolean removeBalance(UUID uuid, BigDecimal amount) {
-        if (amount.compareTo(BigDecimal.ZERO) < 0) return false;
+    public CompletableFuture<Boolean> addBalance(UUID uuid, BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) < 0) return CompletableFuture.completedFuture(false);
         
-        AccountData account = getOrCreateAccount(uuid);
-        if (account.getBalance().compareTo(amount) < 0) {
-            return false; // Insufficient funds
+        return getOrCreateAccount(uuid, null).thenComposeAsync(account -> {
+            account.setBalance(account.getBalance().add(amount));
+            account.incrementVersion();
+            
+            return storage.saveAccount(uuid, account).thenApply(v -> {
+                savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+                return true;
+            });
+        }, ioExecutor);
+    }
+
+    /**
+     * Removes balance from a player's account asynchronously.
+     * @return CompletableFuture completing with true if successful.
+     */
+    public CompletableFuture<Boolean> removeBalance(UUID uuid, BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) < 0) return CompletableFuture.completedFuture(false);
+        
+        return getOrCreateAccount(uuid, null).thenComposeAsync(account -> {
+            if (account.getBalance().compareTo(amount) < 0) {
+                return CompletableFuture.completedFuture(false); // Insufficient funds
+            }
+            
+            account.setBalance(account.getBalance().subtract(amount));
+            account.incrementVersion();
+            
+            return storage.saveAccount(uuid, account).thenApply(v -> {
+                savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+                return true;
+            });
+        }, ioExecutor);
+    }
+
+    /**
+     * Gets or creates an account asynchronously.
+     */
+    public CompletableFuture<AccountData> getOrCreateAccount(UUID uuid, String name) {
+        AccountData cached = accountCache.getIfPresent(uuid);
+        if (cached != null) {
+            return CompletableFuture.completedFuture(cached);
         }
-        
-        account.setBalance(account.getBalance().subtract(amount));
-        account.incrementVersion();
-        
-        storage.saveAccount(uuid, account);
-        return true;
-    }
 
-    /**
-     * Internal helper to ensure an account exists in the cache and storage.
-     */
-    public AccountData getOrCreateAccount(UUID uuid) {
-        return getOrCreateAccount(uuid, null);
-    }
-
-    /**
-     * Internal helper to ensure an account exists in the cache and storage.
-     * Updates name if provided and different.
-     */
-    public AccountData getOrCreateAccount(UUID uuid, String name) {
-        return accountCache.get(uuid, k -> {
-            AccountData stored = storage.loadAccount(uuid);
+        return storage.loadAccount(uuid).thenComposeAsync(stored -> {
             if (stored != null) {
                 if (name != null && !name.equals(stored.getName())) {
                     stored.setName(name);
-                    storage.saveAccount(uuid, stored);
+                    return storage.saveAccount(uuid, stored).thenApply(v -> {
+                        accountCache.put(uuid, stored);
+                        return stored;
+                    });
                 }
-                return stored;
+                accountCache.put(uuid, stored);
+                return CompletableFuture.completedFuture(stored);
             }
-            
+
             AccountData newAccount = new AccountData(name != null ? name : "Unknown", ConfigManager.getConfig().defaultBalance);
-            storage.saveAccount(uuid, newAccount);
-            return newAccount;
-        });
+            return storage.saveAccount(uuid, newAccount).thenApply(v -> {
+                accountCache.put(uuid, newAccount);
+                return newAccount;
+            });
+        }, ioExecutor);
     }
 
     /**
-     * Sets a player's balance directly.
+     * Sets a player's balance asynchronously.
      */
-    public void setBalance(UUID uuid, BigDecimal balance) {
-        AccountData account = getOrCreateAccount(uuid);
-        account.setBalance(balance);
-        account.incrementVersion();
-        storage.saveAccount(uuid, account);
+    public CompletableFuture<Void> setBalance(UUID uuid, BigDecimal balance) {
+        return getOrCreateAccount(uuid, null).thenComposeAsync(account -> {
+            account.setBalance(balance);
+            account.incrementVersion();
+            return storage.saveAccount(uuid, account).thenAccept(v -> {
+                savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+            });
+        }, ioExecutor);
     }
 
     /**
-     * Resets a player's balance to the default starting balance.
+     * Resets a player's balance to the default starting balance asynchronously.
      */
-    public void resetBalance(UUID uuid) {
-        setBalance(uuid, ConfigManager.getConfig().defaultBalance);
+    public CompletableFuture<Void> resetBalance(UUID uuid) {
+        return setBalance(uuid, ConfigManager.getConfig().defaultBalance);
     }
 
-    public boolean hasAccount(UUID uuid) {
-        return accountCache.getIfPresent(uuid) != null || storage.loadAccount(uuid) != null;
+    public CompletableFuture<Boolean> hasAccount(UUID uuid) {
+        if (accountCache.getIfPresent(uuid) != null) return CompletableFuture.completedFuture(true);
+        return storage.loadAccount(uuid).thenApply(Objects::nonNull);
     }
 
-    public void createAccount(UUID uuid, String name) {
+    public CompletableFuture<Void> createAccount(UUID uuid, String name) {
         AccountData account = new AccountData(name, ConfigManager.getConfig().defaultBalance);
         accountCache.put(uuid, account);
-        storage.saveAccount(uuid, account);
+        return storage.saveAccount(uuid, account);
     }
 
     /**
@@ -149,33 +188,39 @@ public class EconomyManager {
     }
 
     /**
-     * Returns the top accounts for baltop.
+     * Returns the top accounts for baltop asynchronously.
      */
-    public List<AccountData> getTopAccounts(int limit) {
-        return storage.loadAllAccounts().values().stream()
+    public CompletableFuture<List<AccountData>> getTopAccounts(int limit) {
+        return storage.loadAllAccounts().thenApply(accounts -> 
+            accounts.values().stream()
                 .sorted((a, b) -> b.getBalance().compareTo(a.getBalance()))
                 .limit(limit)
-                .collect(Collectors.toList());
+                .collect(Collectors.toList())
+        );
     }
 
     /**
-     * Looks up a UUID by player name from the storage.
+     * Looks up a UUID by player name from the storage asynchronously.
      */
-    public UUID getUUIDFromName(String name) {
-        return storage.loadAllAccounts().entrySet().stream()
+    public CompletableFuture<UUID> getUUIDFromName(String name) {
+        return storage.loadAllAccounts().thenApply(accounts -> 
+            accounts.entrySet().stream()
                 .filter(entry -> entry.getValue().getName().equalsIgnoreCase(name))
                 .map(Map.Entry::getKey)
                 .findFirst()
-                .orElse(null);
+                .orElse(null)
+        );
     }
 
     /**
-     * Gets all known player names (for suggestions).
+     * Gets all known player names asynchronously (for suggestions).
      */
-    public List<String> getAllPlayerNames() {
-        return storage.loadAllAccounts().values().stream()
+    public CompletableFuture<List<String>> getAllPlayerNames() {
+        return storage.loadAllAccounts().thenApply(accounts -> 
+            accounts.values().stream()
                 .map(AccountData::getName)
-                .collect(Collectors.toList());
+                .collect(Collectors.toList())
+        );
     }
 
     /**
@@ -183,5 +228,14 @@ public class EconomyManager {
      */
     public void shutdown() {
         storage.shutdown();
+        savage.commoneconomy.util.RedisManager.getInstance().shutdown();
+        ioExecutor.shutdown();
+        try {
+            if (!ioExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                ioExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            ioExecutor.shutdownNow();
+        }
     }
 }

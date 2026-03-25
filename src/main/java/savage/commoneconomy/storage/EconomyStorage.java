@@ -4,25 +4,26 @@ import savage.commoneconomy.model.AccountData;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Interface for economy storage handlers.
  */
 public interface EconomyStorage {
     /**
-     * Loads an account from storage.
+     * Loads an account from storage asynchronously.
      */
-    AccountData loadAccount(UUID uuid);
+    CompletableFuture<AccountData> loadAccount(UUID uuid);
 
     /**
-     * Saves an account to storage.
+     * Saves an account to storage asynchronously.
      */
-    void saveAccount(UUID uuid, AccountData data);
+    CompletableFuture<Void> saveAccount(UUID uuid, AccountData data);
 
     /**
-     * Deletes an account from storage.
+     * Deletes an account from storage asynchronously.
      */
-    void deleteAccount(UUID uuid);
+    CompletableFuture<Void> deleteAccount(UUID uuid);
 
     /**
      * Performs a graceful shutdown of the storage handler.
@@ -30,7 +31,7 @@ public interface EconomyStorage {
     void shutdown();
 
     /**
-     * @return All stored accounts (used for baltop/migrations).
+     * @return All stored accounts asynchronously (used for baltop/migrations).
      */
-    Map<UUID, AccountData> loadAllAccounts();
+    CompletableFuture<Map<UUID, AccountData>> loadAllAccounts();
 }

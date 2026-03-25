@@ -62,8 +62,8 @@ public class LogCommand {
 
         context.getSource().sendSuccess(() -> Component.literal("Searching logs for " + target + " in the last " + time + unit + "..."), false);
 
-        // Async execution to avoid blocking server
-        new Thread(() -> {
+        // Async execution using the centralized executor to avoid blocking server
+        savage.commoneconomy.EconomyManager.getInstance().getIoExecutor().submit(() -> {
             List<TransactionLogger.LogEntry> results = TransactionLogger.searchLogs(target, cutoff);
             
             if (results.isEmpty()) {
@@ -125,7 +125,7 @@ public class LogCommand {
                 }
                 context.getSource().sendSuccess(() -> navText, false);
             }
-        }).start();
+        });
 
         return 1;
     }

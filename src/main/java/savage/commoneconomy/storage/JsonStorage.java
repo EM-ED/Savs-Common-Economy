@@ -15,6 +15,8 @@ import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 /**
  * JSON-based storage for economy accounts.
@@ -24,10 +26,12 @@ public class JsonStorage implements EconomyStorage {
     private static final File STORAGE_FILE = FabricLoader.getInstance().getConfigDir()
             .resolve("savs-common-economy").resolve("balances.json").toFile();
 
+    private final ExecutorService executor;
     private Map<UUID, AccountData> cachedData = new HashMap<>();
 
-    public JsonStorage() {
-        load();
+    public JsonStorage(ExecutorService executor) {
+        this.executor = executor;
+        load(); // Initial load into cache
     }
 
     private void load() {
@@ -44,34 +48,60 @@ public class JsonStorage implements EconomyStorage {
         }
     }
 
-    private void save() {
+    private synchronized Map<UUID, AccountData> loadMap() {
+        if (!STORAGE_FILE.exists()) {
+            return new HashMap<>();
+        }
+        try (FileReader reader = new FileReader(STORAGE_FILE)) {
+            Type type = new TypeToken<Map<UUID, AccountData>>() {}.getType();
+            Map<UUID, AccountData> data = GSON.fromJson(reader, type);
+            return data != null ? data : new HashMap<>();
+        } catch (IOException e) {
+            SavsCommonEconomy.LOGGER.error("Failed to load balances from JSON!", e);
+            return new HashMap<>();
+        }
+    }
+
+    private synchronized void saveMap(Map<UUID, AccountData> map) {
         try {
             File parent = STORAGE_FILE.getParentFile();
             if (!parent.exists()) parent.mkdirs();
 
             try (FileWriter writer = new FileWriter(STORAGE_FILE)) {
-                GSON.toJson(cachedData, writer);
+                GSON.toJson(map, writer);
             }
         } catch (IOException e) {
             SavsCommonEconomy.LOGGER.error("Failed to save balances to JSON!", e);
         }
     }
 
-    @Override
-    public AccountData loadAccount(UUID uuid) {
-        return cachedData.get(uuid);
+    private synchronized void save() {
+        saveMap(cachedData);
     }
 
     @Override
-    public void saveAccount(UUID uuid, AccountData data) {
-        cachedData.put(uuid, data);
-        save();
+    public CompletableFuture<AccountData> loadAccount(UUID uuid) {
+        return CompletableFuture.completedFuture(cachedData.get(uuid));
     }
 
     @Override
-    public void deleteAccount(UUID uuid) {
-        cachedData.remove(uuid);
-        save();
+    public CompletableFuture<Void> saveAccount(UUID uuid, AccountData data) {
+        return CompletableFuture.runAsync(() -> {
+            Map<UUID, AccountData> map = loadMap();
+            map.put(uuid, data);
+            saveMap(map);
+            this.cachedData = map; // Update cache after async save
+        }, executor);
+    }
+
+    @Override
+    public CompletableFuture<Void> deleteAccount(UUID uuid) {
+        return CompletableFuture.runAsync(() -> {
+            Map<UUID, AccountData> map = loadMap();
+            map.remove(uuid);
+            saveMap(map);
+            this.cachedData = map; // Update cache after async delete
+        }, executor);
     }
 
     @Override
@@ -80,7 +110,7 @@ public class JsonStorage implements EconomyStorage {
     }
 
     @Override
-    public Map<UUID, AccountData> loadAllAccounts() {
-        return new HashMap<>(cachedData);
+    public CompletableFuture<Map<UUID, AccountData>> loadAllAccounts() {
+        return CompletableFuture.completedFuture(new HashMap<>(cachedData));
     }
 }

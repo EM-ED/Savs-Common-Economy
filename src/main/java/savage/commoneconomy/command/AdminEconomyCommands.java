@@ -12,7 +12,6 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import savage.commoneconomy.EconomyManager;
-import savage.commoneconomy.EconomyManager;
 import savage.commoneconomy.util.PermissionsHelper;
 import savage.commoneconomy.util.TransactionLogger;
 
@@ -28,10 +27,11 @@ import java.util.UUID;
 public class AdminEconomyCommands {
 
     private static final SuggestionProvider<CommandSourceStack> PLAYER_SUGGESTIONS = (context, builder) -> {
-        List<String> suggestions = new ArrayList<>();
-        suggestions.addAll(Arrays.asList(context.getSource().getServer().getPlayerNames()));
-        suggestions.addAll(EconomyManager.getInstance().getAllPlayerNames());
-        return SharedSuggestionProvider.suggest(suggestions, builder);
+        return EconomyManager.getInstance().getAllPlayerNames().thenApply(names -> {
+            List<String> suggestions = new ArrayList<>(names);
+            suggestions.addAll(Arrays.asList(context.getSource().getServer().getPlayerNames()));
+            return SharedSuggestionProvider.suggest(suggestions, builder);
+        }).join();
     };
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
@@ -73,85 +73,97 @@ public class AdminEconomyCommands {
     private static int giveMoney(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String targetName = StringArgumentType.getString(context, "target");
         BigDecimal amount = BigDecimal.valueOf(DoubleArgumentType.getDouble(context, "amount"));
-        UUID targetUUID = lookupUUID(context, targetName);
-
-        if (targetUUID == null) {
-            context.getSource().sendFailure(Component.literal("Player not found in economy database."));
-            return 0;
-        }
-
-        EconomyManager.getInstance().addBalance(targetUUID, amount);
-        String formatted = EconomyManager.getInstance().format(amount);
-        context.getSource().sendSuccess(() -> Component.literal("Gave " + formatted + " to " + targetName), true);
         
-        TransactionLogger.log("ADMIN_GIVE", context.getSource().getTextName(), targetName, amount, "Admin Gift");
-        notifyTarget(context, targetUUID, "Received " + formatted + " (Admin Gift)");
+        lookupUUID(context, targetName).thenAccept(targetUUID -> {
+            if (targetUUID == null) {
+                context.getSource().sendFailure(Component.literal("Player not found in economy database."));
+                return;
+            }
+
+            EconomyManager.getInstance().addBalance(targetUUID, amount).thenAccept(success -> {
+                String formatted = EconomyManager.getInstance().format(amount);
+                context.getSource().sendSuccess(() -> Component.literal("Gave " + formatted + " to " + targetName), true);
+                
+                TransactionLogger.log("ADMIN_GIVE", context.getSource().getTextName(), targetName, amount, "Admin Gift");
+                notifyTarget(context, targetUUID, "Received " + formatted + " (Admin Gift)");
+            });
+        });
+        
         return 1;
     }
 
     private static int takeMoney(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String targetName = StringArgumentType.getString(context, "target");
         BigDecimal amount = BigDecimal.valueOf(DoubleArgumentType.getDouble(context, "amount"));
-        UUID targetUUID = lookupUUID(context, targetName);
+        
+        lookupUUID(context, targetName).thenAccept(targetUUID -> {
+            if (targetUUID == null) {
+                context.getSource().sendFailure(Component.literal("Player not found in economy database."));
+                return;
+            }
 
-        if (targetUUID == null) {
-            context.getSource().sendFailure(Component.literal("Player not found in economy database."));
-            return 0;
-        }
-
-        if (EconomyManager.getInstance().removeBalance(targetUUID, amount)) {
-            String formatted = EconomyManager.getInstance().format(amount);
-            context.getSource().sendSuccess(() -> Component.literal("Took " + formatted + " from " + targetName), true);
-            
-            TransactionLogger.log("ADMIN_TAKE", context.getSource().getTextName(), targetName, amount, "Admin Take");
-            return 1;
-        } else {
-            context.getSource().sendFailure(Component.literal("Target has insufficient funds to take this amount."));
-            return 0;
-        }
+            EconomyManager.getInstance().removeBalance(targetUUID, amount).thenAccept(success -> {
+                if (success) {
+                    String formatted = EconomyManager.getInstance().format(amount);
+                    context.getSource().sendSuccess(() -> Component.literal("Took " + formatted + " from " + targetName), true);
+                    TransactionLogger.log("ADMIN_TAKE", context.getSource().getTextName(), targetName, amount, "Admin Take");
+                } else {
+                    context.getSource().sendFailure(Component.literal("Target has insufficient funds to take this amount."));
+                }
+            });
+        });
+        
+        return 1;
     }
 
     private static int setMoney(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String targetName = StringArgumentType.getString(context, "target");
         BigDecimal amount = BigDecimal.valueOf(DoubleArgumentType.getDouble(context, "amount"));
-        UUID targetUUID = lookupUUID(context, targetName);
-
-        if (targetUUID == null) {
-            context.getSource().sendFailure(Component.literal("Player not found in economy database."));
-            return 0;
-        }
-
-        EconomyManager.getInstance().setBalance(targetUUID, amount);
-        String formatted = EconomyManager.getInstance().format(amount);
-        context.getSource().sendSuccess(() -> Component.literal("Set " + targetName + "'s balance to " + formatted), true);
         
-        TransactionLogger.log("ADMIN_SET", context.getSource().getTextName(), targetName, amount, "Admin Set");
-        notifyTarget(context, targetUUID, "Your balance has been set to " + formatted + " by an admin.");
+        lookupUUID(context, targetName).thenAccept(targetUUID -> {
+            if (targetUUID == null) {
+                context.getSource().sendFailure(Component.literal("Player not found in economy database."));
+                return;
+            }
+
+            EconomyManager.getInstance().setBalance(targetUUID, amount).thenAccept(v -> {
+                String formatted = EconomyManager.getInstance().format(amount);
+                context.getSource().sendSuccess(() -> Component.literal("Set " + targetName + "'s balance to " + formatted), true);
+                TransactionLogger.log("ADMIN_SET", context.getSource().getTextName(), targetName, amount, "Admin Set");
+                notifyTarget(context, targetUUID, "Your balance has been set to " + formatted + " by an admin.");
+            });
+        });
+        
         return 1;
     }
 
     private static int resetMoney(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String targetName = StringArgumentType.getString(context, "target");
-        UUID targetUUID = lookupUUID(context, targetName);
-
-        if (targetUUID == null) {
-            context.getSource().sendFailure(Component.literal("Player not found in economy database."));
-            return 0;
-        }
-
-        EconomyManager.getInstance().resetBalance(targetUUID);
-        BigDecimal defaultBal = EconomyManager.getInstance().getBalance(targetUUID);
-        String formatted = EconomyManager.getInstance().format(defaultBal);
-        context.getSource().sendSuccess(() -> Component.literal("Reset " + targetName + "'s balance to " + formatted), true);
         
-        TransactionLogger.log("ADMIN_RESET", context.getSource().getTextName(), targetName, defaultBal, "Admin Reset");
-        notifyTarget(context, targetUUID, "Your balance has been reset to " + formatted + " by an admin.");
+        lookupUUID(context, targetName).thenAccept(targetUUID -> {
+            if (targetUUID == null) {
+                context.getSource().sendFailure(Component.literal("Player not found in economy database."));
+                return;
+            }
+
+            EconomyManager.getInstance().resetBalance(targetUUID).thenAccept(v -> {
+                // We need default balance to format message, but EconomyManager.getBalance is now async?
+                // Wait, EconomyManager.getBalance(UUID) was NOT and should NOT be async if it returns cached value.
+                // But if default balance is needed, we can just get it from config.
+                BigDecimal defaultBal = savage.commoneconomy.config.ConfigManager.getConfig().defaultBalance;
+                String formatted = EconomyManager.getInstance().format(defaultBal);
+                context.getSource().sendSuccess(() -> Component.literal("Reset " + targetName + "'s balance to " + formatted), true);
+                TransactionLogger.log("ADMIN_RESET", context.getSource().getTextName(), targetName, defaultBal, "Admin Reset");
+                notifyTarget(context, targetUUID, "Your balance has been reset to " + formatted + " by an admin.");
+            });
+        });
+        
         return 1;
     }
 
-    private static UUID lookupUUID(CommandContext<CommandSourceStack> context, String name) {
+    private static java.util.concurrent.CompletableFuture<UUID> lookupUUID(CommandContext<CommandSourceStack> context, String name) {
         ServerPlayer target = context.getSource().getServer().getPlayerList().getPlayerByName(name);
-        if (target != null) return target.getUUID();
+        if (target != null) return java.util.concurrent.CompletableFuture.completedFuture(target.getUUID());
         return EconomyManager.getInstance().getUUIDFromName(name);
     }
 

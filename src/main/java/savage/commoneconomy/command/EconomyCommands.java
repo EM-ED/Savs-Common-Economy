@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Player-facing economy commands.
@@ -33,12 +34,11 @@ import java.util.UUID;
 public class EconomyCommands {
 
     private static final SuggestionProvider<CommandSourceStack> PLAYER_SUGGESTIONS = (context, builder) -> {
-        List<String> suggestions = new ArrayList<>();
-        // Online players
-        suggestions.addAll(Arrays.asList(context.getSource().getServer().getPlayerNames()));
-        // Offline players from storage
-        suggestions.addAll(EconomyManager.getInstance().getAllPlayerNames());
-        return SharedSuggestionProvider.suggest(suggestions, builder);
+        return EconomyManager.getInstance().getAllPlayerNames().thenApply(names -> {
+            List<String> suggestions = new ArrayList<>(names);
+            suggestions.addAll(Arrays.asList(context.getSource().getServer().getPlayerNames()));
+            return SharedSuggestionProvider.suggest(suggestions, builder);
+        }).join(); // Suggestion providers can wait slightly or be returned as future
     };
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
@@ -83,22 +83,29 @@ public class EconomyCommands {
 
     private static int checkSelfBalance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         ServerPlayer player = context.getSource().getPlayer();
-        BigDecimal balance = EconomyManager.getInstance().getBalance(player.getUUID());
-        context.getSource().sendSuccess(() -> Component.literal("Your balance: " + EconomyManager.getInstance().format(balance)), false);
+        EconomyManager.getInstance().getOrCreateAccount(player.getUUID(), player.getName().getString())
+            .thenAccept(account -> {
+                BigDecimal balance = account.getBalance();
+                context.getSource().sendSuccess(() -> Component.literal("Your balance: " + EconomyManager.getInstance().format(balance)), false);
+            });
         return 1;
     }
 
     private static int checkOtherBalance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String targetName = StringArgumentType.getString(context, "target");
-        UUID targetUUID = lookupUUID(context, targetName);
+        
+        lookupUUID(context, targetName).thenAccept(targetUUID -> {
+            if (targetUUID == null) {
+                context.getSource().sendFailure(Component.literal("Player not found in economy database."));
+                return;
+            }
 
-        if (targetUUID == null) {
-            context.getSource().sendFailure(Component.literal("Player not found in economy database."));
-            return 0;
-        }
-
-        BigDecimal balance = EconomyManager.getInstance().getBalance(targetUUID);
-        context.getSource().sendSuccess(() -> Component.literal(targetName + "'s balance: " + EconomyManager.getInstance().format(balance)), false);
+            EconomyManager.getInstance().getOrCreateAccount(targetUUID, targetName).thenAccept(account -> {
+                BigDecimal balance = account.getBalance();
+                context.getSource().sendSuccess(() -> Component.literal(targetName + "'s balance: " + EconomyManager.getInstance().format(balance)), false);
+            });
+        });
+        
         return 1;
     }
 
@@ -107,34 +114,37 @@ public class EconomyCommands {
         String targetName = StringArgumentType.getString(context, "target");
         BigDecimal amount = BigDecimal.valueOf(DoubleArgumentType.getDouble(context, "amount"));
 
-        UUID targetUUID = lookupUUID(context, targetName);
-        if (targetUUID == null) {
-            context.getSource().sendFailure(Component.literal("Player not found in economy database."));
-            return 0;
-        }
-
-        if (sender.getUUID().equals(targetUUID)) {
-            context.getSource().sendFailure(Component.literal("You cannot pay yourself."));
-            return 0;
-        }
-
-        if (EconomyManager.getInstance().removeBalance(sender.getUUID(), amount)) {
-            EconomyManager.getInstance().addBalance(targetUUID, amount);
-            
-            String formatted = EconomyManager.getInstance().format(amount);
-            context.getSource().sendSuccess(() -> Component.literal("Paid " + formatted + " to " + targetName), false);
-            
-            ServerPlayer targetPlayer = context.getSource().getServer().getPlayerList().getPlayer(targetUUID);
-            if (targetPlayer != null) {
-                targetPlayer.sendSystemMessage(Component.literal("Received " + formatted + " from " + sender.getName().getString()));
+        lookupUUID(context, targetName).thenAccept(targetUUID -> {
+            if (targetUUID == null) {
+                context.getSource().sendFailure(Component.literal("Player not found in economy database."));
+                return;
             }
-            
-            TransactionLogger.log("PAY", sender.getName().getString(), targetName, amount, "Player Payment");
-            return 1;
-        } else {
-            context.getSource().sendFailure(Component.literal("Insufficient funds."));
-            return 0;
-        }
+
+            if (sender.getUUID().equals(targetUUID)) {
+                context.getSource().sendFailure(Component.literal("You cannot pay yourself."));
+                return;
+            }
+
+            EconomyManager.getInstance().removeBalance(sender.getUUID(), amount).thenAccept(success -> {
+                if (success) {
+                    EconomyManager.getInstance().addBalance(targetUUID, amount).thenAccept(addSuccess -> {
+                        String formatted = EconomyManager.getInstance().format(amount);
+                        context.getSource().sendSuccess(() -> Component.literal("Paid " + formatted + " to " + targetName), false);
+                        
+                        ServerPlayer targetPlayer = context.getSource().getServer().getPlayerList().getPlayer(targetUUID);
+                        if (targetPlayer != null) {
+                            targetPlayer.sendSystemMessage(Component.literal("Received " + formatted + " from " + sender.getName().getString()));
+                        }
+                        
+                        TransactionLogger.log("PAY", sender.getName().getString(), targetName, amount, "Player Payment");
+                    });
+                } else {
+                    context.getSource().sendFailure(Component.literal("Insufficient funds."));
+                }
+            });
+        });
+        
+        return 1;
     }
 
     private static int withdraw(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -142,45 +152,48 @@ public class EconomyCommands {
         double amountDouble = DoubleArgumentType.getDouble(context, "amount");
         BigDecimal amount = BigDecimal.valueOf(amountDouble);
 
-        if (EconomyManager.getInstance().removeBalance(sender.getUUID(), amount)) {
-            ItemStack note = new ItemStack(Items.PAPER);
-            
-            CompoundTag tag = new CompoundTag();
-            tag.putBoolean("EconomyBankNote", true);
-            tag.putDouble("Value", amountDouble);
-            note.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
-            
-            note.set(DataComponents.CUSTOM_NAME, 
-                Component.literal("Bank Note: " + EconomyManager.getInstance().format(amount))
-                    .withStyle(net.minecraft.ChatFormatting.GREEN));
+        EconomyManager.getInstance().removeBalance(sender.getUUID(), amount).thenAccept(success -> {
+            if (success) {
+                ItemStack note = new ItemStack(Items.PAPER);
+                
+                CompoundTag tag = new CompoundTag();
+                tag.putBoolean("EconomyBankNote", true);
+                tag.putDouble("Value", amountDouble);
+                note.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+                
+                note.set(DataComponents.CUSTOM_NAME, 
+                    Component.literal("Bank Note: " + EconomyManager.getInstance().format(amount))
+                        .withStyle(net.minecraft.ChatFormatting.GREEN));
 
-            if (!sender.getInventory().add(note)) {
-                sender.drop(note, false);
+                if (!sender.getInventory().add(note)) {
+                    sender.drop(note, false);
+                }
+                
+                context.getSource().sendSuccess(() -> Component.literal("Withdrew " + EconomyManager.getInstance().format(amount) + " as a bank note."), false);
+                TransactionLogger.log("WITHDRAW", sender.getName().getString(), "Bank Note", amount, "Withdrawal");
+            } else {
+                context.getSource().sendFailure(Component.literal("Insufficient funds."));
             }
-            
-            context.getSource().sendSuccess(() -> Component.literal("Withdrew " + EconomyManager.getInstance().format(amount) + " as a bank note."), false);
-            TransactionLogger.log("WITHDRAW", sender.getName().getString(), "Bank Note", amount, "Withdrawal");
-            return 1;
-        } else {
-            context.getSource().sendFailure(Component.literal("Insufficient funds."));
-            return 0;
-        }
-    }
-
-    private static int balTop(CommandContext<CommandSourceStack> context) {
-        List<AccountData> top = EconomyManager.getInstance().getTopAccounts(10);
-        context.getSource().sendSuccess(() -> Component.literal("--- Top 10 Balances ---"), false);
-        for (int i = 0; i < top.size(); i++) {
-            AccountData account = top.get(i);
-            int rank = i + 1;
-            context.getSource().sendSuccess(() -> Component.literal(rank + ". " + account.getName() + ": " + EconomyManager.getInstance().format(account.getBalance())), false);
-        }
+        });
+        
         return 1;
     }
 
-    private static UUID lookupUUID(CommandContext<CommandSourceStack> context, String name) {
+    private static int balTop(CommandContext<CommandSourceStack> context) {
+        EconomyManager.getInstance().getTopAccounts(10).thenAccept(top -> {
+            context.getSource().sendSuccess(() -> Component.literal("--- Top 10 Balances ---"), false);
+            for (int i = 0; i < top.size(); i++) {
+                AccountData account = top.get(i);
+                int rank = i + 1;
+                context.getSource().sendSuccess(() -> Component.literal(rank + ". " + account.getName() + ": " + EconomyManager.getInstance().format(account.getBalance())), false);
+            }
+        });
+        return 1;
+    }
+
+    private static CompletableFuture<UUID> lookupUUID(CommandContext<CommandSourceStack> context, String name) {
         ServerPlayer target = context.getSource().getServer().getPlayerList().getPlayerByName(name);
-        if (target != null) return target.getUUID();
+        if (target != null) return CompletableFuture.completedFuture(target.getUUID());
         return EconomyManager.getInstance().getUUIDFromName(name);
     }
 }
