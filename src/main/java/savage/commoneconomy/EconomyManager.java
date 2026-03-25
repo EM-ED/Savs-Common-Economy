@@ -82,46 +82,71 @@ public class EconomyManager {
     }
 
     /**
-     * Adds balance to a player's account asynchronously.
+     * Adds balance to a player's account asynchronously with optimistic locking.
      * @return CompletableFuture completing with true if successful.
      */
     public CompletableFuture<Boolean> addBalance(UUID uuid, BigDecimal amount) {
         if (amount.compareTo(BigDecimal.ZERO) < 0) return CompletableFuture.completedFuture(false);
-        
-        return getOrCreateAccount(uuid, null).thenComposeAsync(account -> {
-            account.setBalance(account.getBalance().add(amount));
-            account.incrementVersion();
-            
-            return storage.saveAccount(uuid, account).thenApply(v -> {
-                if (ConfigManager.getConfig().redis.enabled) {
-                    savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
-                }
-                return true;
-            });
-        }, ioExecutor);
+        return retryBalanceUpdate(uuid, amount, true, 5);
     }
 
     /**
-     * Removes balance from a player's account asynchronously.
+     * Removes balance from a player's account asynchronously with optimistic locking.
      * @return CompletableFuture completing with true if successful.
      */
     public CompletableFuture<Boolean> removeBalance(UUID uuid, BigDecimal amount) {
         if (amount.compareTo(BigDecimal.ZERO) < 0) return CompletableFuture.completedFuture(false);
-        
+        return retryBalanceUpdate(uuid, amount, false, 5);
+    }
+
+    /**
+     * Core balance update with optimistic locking and retry.
+     * @param isAdd true to add, false to subtract.
+     * @param retriesLeft number of retries remaining.
+     */
+    private CompletableFuture<Boolean> retryBalanceUpdate(UUID uuid, BigDecimal amount, boolean isAdd, int retriesLeft) {
+        // Always reload from storage to get the latest version
+        accountCache.invalidate(uuid);
+
         return getOrCreateAccount(uuid, null).thenComposeAsync(account -> {
-            if (account.getBalance().compareTo(amount) < 0) {
-                return CompletableFuture.completedFuture(false); // Insufficient funds
-            }
-            
-            account.setBalance(account.getBalance().subtract(amount));
-            account.incrementVersion();
-            
-            return storage.saveAccount(uuid, account).thenApply(v -> {
-                if (ConfigManager.getConfig().redis.enabled) {
-                    savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+            BigDecimal currentBalance = account.getBalance();
+            long expectedVersion = account.getVersion();
+
+            BigDecimal newBalance;
+            if (isAdd) {
+                newBalance = currentBalance.add(amount);
+            } else {
+                if (currentBalance.compareTo(amount) < 0) {
+                    return CompletableFuture.completedFuture(false); // Insufficient funds
                 }
-                return true;
-            });
+                newBalance = currentBalance.subtract(amount);
+            }
+
+            // Create updated account data with incremented version
+            AccountData updated = new AccountData(account.getName(), newBalance, expectedVersion + 1);
+
+            return storage.saveAccountIfVersionMatches(uuid, updated, expectedVersion).thenComposeAsync(success -> {
+                if (success) {
+                    // CAS succeeded — update cache
+                    accountCache.put(uuid, updated);
+                    if (ConfigManager.getConfig().redis.enabled) {
+                        savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+                    }
+                    return CompletableFuture.completedFuture(true);
+                } else if (retriesLeft > 1) {
+                    // Version conflict — invalidate cache and retry
+                    accountCache.invalidate(uuid);
+                    try {
+                        Thread.sleep(5 + (long)(Math.random() * 15));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return retryBalanceUpdate(uuid, amount, isAdd, retriesLeft - 1);
+                } else {
+                    SavsCommonEconomy.LOGGER.error("Balance update failed after all retries for UUID: " + uuid);
+                    return CompletableFuture.completedFuture(false);
+                }
+            }, ioExecutor);
         }, ioExecutor);
     }
 

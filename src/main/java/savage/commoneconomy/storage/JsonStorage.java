@@ -95,6 +95,24 @@ public class JsonStorage implements EconomyStorage {
     }
 
     @Override
+    public CompletableFuture<Boolean> saveAccountIfVersionMatches(UUID uuid, AccountData data, long expectedVersion) {
+        return CompletableFuture.supplyAsync(() -> {
+            synchronized (this) {
+                AccountData existing = cachedData.get(uuid);
+                long currentVersion = existing != null ? existing.getVersion() : 0;
+                if (currentVersion != expectedVersion) {
+                    return false; // Version conflict
+                }
+                Map<UUID, AccountData> map = loadMap();
+                map.put(uuid, data);
+                saveMap(map);
+                this.cachedData = map;
+                return true;
+            }
+        }, executor);
+    }
+
+    @Override
     public CompletableFuture<Void> deleteAccount(UUID uuid) {
         return CompletableFuture.runAsync(() -> {
             Map<UUID, AccountData> map = loadMap();

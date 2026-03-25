@@ -144,6 +144,33 @@ public class SqlStorage implements EconomyStorage {
     }
 
     @Override
+    public CompletableFuture<Boolean> saveAccountIfVersionMatches(UUID uuid, AccountData data, long expectedVersion) {
+        return CompletableFuture.supplyAsync(() -> {
+            String prefix = ConfigManager.getConfig().storage.tablePrefix;
+            // Use UPDATE with WHERE version = ? for optimistic locking (CAS)
+            String query = "UPDATE " + prefix + "balances SET name = ?, balance = ?, version = ? WHERE uuid = ? AND version = ?";
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(query)) {
+                stmt.setString(1, data.getName());
+                stmt.setBigDecimal(2, data.getBalance());
+                stmt.setLong(3, data.getVersion());
+                stmt.setString(4, uuid.toString());
+                stmt.setLong(5, expectedVersion);
+
+                int rowsAffected = stmt.executeUpdate();
+                if (rowsAffected == 0) {
+                    // Either version conflict or account doesn't exist yet — try insert for new accounts
+                    return false;
+                }
+                return true;
+            } catch (SQLException e) {
+                SavsCommonEconomy.LOGGER.error("Failed to CAS-save account to SQL: " + uuid, e);
+                return false;
+            }
+        }, executor);
+    }
+
+    @Override
     public CompletableFuture<Map<UUID, AccountData>> loadAllAccounts() {
         return CompletableFuture.supplyAsync(() -> {
             Map<UUID, AccountData> accounts = new HashMap<>();

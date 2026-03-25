@@ -155,11 +155,15 @@ public class SellCommands {
         int count = stack.getCount();
         BigDecimal totalValue = price.multiply(BigDecimal.valueOf(count));
 
+        var server1 = context.getSource().getServer();
         EconomyManager.getInstance().addBalance(player.getUUID(), totalValue).thenAccept(success -> {
             if (success) {
-                player.getInventory().removeItem(stack); // In 26.1 use removeItem or set to Empty
-                context.getSource().sendSuccess(() -> Component.literal("Sold " + count + "x " + itemId + " for " + EconomyManager.getInstance().format(totalValue)), false);
-                savage.commoneconomy.util.TransactionLogger.log("SELL", player.getName().getString(), "Server", totalValue, "Sold " + count + "x " + itemId);
+                // Must modify inventory on the main server thread
+                server1.execute(() -> {
+                    player.getInventory().removeItem(stack); // In 26.1 use removeItem or set to Empty
+                    context.getSource().sendSuccess(() -> Component.literal("Sold " + count + "x " + itemId + " for " + EconomyManager.getInstance().format(totalValue)), false);
+                    savage.commoneconomy.util.TransactionLogger.log("SELL", player.getName().getString(), "Server", totalValue, "Sold " + count + "x " + itemId);
+                });
             } else {
                 context.getSource().sendFailure(Component.literal("Transaction failed."));
             }
@@ -197,16 +201,20 @@ public class SellCommands {
 
         BigDecimal totalValue = price.multiply(BigDecimal.valueOf(totalCount));
         int finalCount = totalCount;
+        var server2 = context.getSource().getServer();
         EconomyManager.getInstance().addBalance(player.getUUID(), totalValue).thenAccept(success -> {
             if (success) {
-                for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
-                    ItemStack stack = player.getInventory().getItem(i);
-                    if (!stack.isEmpty() && stack.getItem() == handStack.getItem()) {
-                        player.getInventory().setItem(i, ItemStack.EMPTY);
+                // Must modify inventory on the main server thread
+                server2.execute(() -> {
+                    for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+                        ItemStack stack = player.getInventory().getItem(i);
+                        if (!stack.isEmpty() && stack.getItem() == handStack.getItem()) {
+                            player.getInventory().setItem(i, ItemStack.EMPTY);
+                        }
                     }
-                }
-                context.getSource().sendSuccess(() -> Component.literal("Sold all " + finalCount + "x " + itemId + " for " + EconomyManager.getInstance().format(totalValue)), false);
-                savage.commoneconomy.util.TransactionLogger.log("SELL_ALL", player.getName().getString(), "Server", totalValue, "Sold all " + finalCount + "x " + itemId);
+                    context.getSource().sendSuccess(() -> Component.literal("Sold all " + finalCount + "x " + itemId + " for " + EconomyManager.getInstance().format(totalValue)), false);
+                    savage.commoneconomy.util.TransactionLogger.log("SELL_ALL", player.getName().getString(), "Server", totalValue, "Sold all " + finalCount + "x " + itemId);
+                });
             } else {
                 context.getSource().sendFailure(Component.literal("Transaction failed."));
             }
@@ -237,14 +245,18 @@ public class SellCommands {
 
         BigDecimal totalCost = price.multiply(BigDecimal.valueOf(amount));
 
+        var server3 = context.getSource().getServer();
         EconomyManager.getInstance().removeBalance(player.getUUID(), totalCost).thenAccept(success -> {
             if (success) {
-                ItemStack stack = new ItemStack(item, amount);
-                if (!player.getInventory().add(stack)) {
-                    player.drop(stack, false);
-                }
-                context.getSource().sendSuccess(() -> Component.literal("Bought " + amount + "x " + itemId + " for " + EconomyManager.getInstance().format(totalCost)), false);
-                savage.commoneconomy.util.TransactionLogger.log("BUY", "Server", player.getName().getString(), totalCost, "Bought " + amount + "x " + itemId);
+                // Must modify inventory on the main server thread
+                server3.execute(() -> {
+                    ItemStack stack = new ItemStack(item, amount);
+                    if (!player.getInventory().add(stack)) {
+                        player.drop(stack, false);
+                    }
+                    context.getSource().sendSuccess(() -> Component.literal("Bought " + amount + "x " + itemId + " for " + EconomyManager.getInstance().format(totalCost)), false);
+                    savage.commoneconomy.util.TransactionLogger.log("BUY", "Server", player.getName().getString(), totalCost, "Bought " + amount + "x " + itemId);
+                });
             } else {
                 context.getSource().sendFailure(Component.literal("Insufficient funds! Cost: " + EconomyManager.getInstance().format(totalCost)));
             }

@@ -21,6 +21,13 @@ public interface EconomyStorage {
     CompletableFuture<Void> saveAccount(UUID uuid, AccountData data);
 
     /**
+     * Saves an account to storage with optimistic locking (CAS).
+     * Only succeeds if the stored version matches expectedVersion.
+     * @return true if the save succeeded, false if a version conflict occurred.
+     */
+    CompletableFuture<Boolean> saveAccountIfVersionMatches(UUID uuid, AccountData data, long expectedVersion);
+
+    /**
      * Deletes an account from storage asynchronously.
      */
     CompletableFuture<Void> deleteAccount(UUID uuid);

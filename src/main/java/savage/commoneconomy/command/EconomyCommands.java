@@ -152,25 +152,29 @@ public class EconomyCommands {
         double amountDouble = DoubleArgumentType.getDouble(context, "amount");
         BigDecimal amount = BigDecimal.valueOf(amountDouble);
 
+        var server = context.getSource().getServer();
         EconomyManager.getInstance().removeBalance(sender.getUUID(), amount).thenAccept(success -> {
             if (success) {
-                ItemStack note = new ItemStack(Items.PAPER);
-                
-                CompoundTag tag = new CompoundTag();
-                tag.putBoolean("EconomyBankNote", true);
-                tag.putDouble("Value", amountDouble);
-                note.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
-                
-                note.set(DataComponents.CUSTOM_NAME, 
-                    Component.literal("Bank Note: " + EconomyManager.getInstance().format(amount))
-                        .withStyle(net.minecraft.ChatFormatting.GREEN));
+                // Must modify inventory on the main server thread
+                server.execute(() -> {
+                    ItemStack note = new ItemStack(Items.PAPER);
+                    
+                    CompoundTag tag = new CompoundTag();
+                    tag.putBoolean("EconomyBankNote", true);
+                    tag.putDouble("Value", amountDouble);
+                    note.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+                    
+                    note.set(DataComponents.CUSTOM_NAME, 
+                        Component.literal("Bank Note: " + EconomyManager.getInstance().format(amount))
+                            .withStyle(net.minecraft.ChatFormatting.GREEN));
 
-                if (!sender.getInventory().add(note)) {
-                    sender.drop(note, false);
-                }
-                
-                context.getSource().sendSuccess(() -> Component.literal("Withdrew " + EconomyManager.getInstance().format(amount) + " as a bank note."), false);
-                TransactionLogger.log("WITHDRAW", sender.getName().getString(), "Bank Note", amount, "Withdrawal");
+                    if (!sender.getInventory().add(note)) {
+                        sender.drop(note, false);
+                    }
+                    
+                    context.getSource().sendSuccess(() -> Component.literal("Withdrew " + EconomyManager.getInstance().format(amount) + " as a bank note."), false);
+                    TransactionLogger.log("WITHDRAW", sender.getName().getString(), "Bank Note", amount, "Withdrawal");
+                });
             } else {
                 context.getSource().sendFailure(Component.literal("Insufficient funds."));
             }
