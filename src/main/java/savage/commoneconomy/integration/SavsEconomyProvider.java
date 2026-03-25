@@ -6,6 +6,8 @@ import eu.pb4.common.economy.api.EconomyCurrency;
 import eu.pb4.common.economy.api.EconomyAccount;
 import net.minecraft.server.MinecraftServer;
 import com.mojang.authlib.GameProfile;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import java.util.Collection;
 
 public class SavsEconomyProvider implements EconomyProvider {
@@ -18,6 +20,12 @@ public class SavsEconomyProvider implements EconomyProvider {
     public Component name() {
         return Component.literal("Savs Common Economy");
     }
+
+    @Override
+    public ItemStack icon() {
+        return Items.EMERALD.getDefaultInstance();
+    }
+
 
     @Override
     public Collection<EconomyCurrency> getCurrencies(MinecraftServer server) {

@@ -26,7 +26,7 @@ public class SavsCommonEconomy implements ModInitializer {
 		// However, some things (like resources) may still be uninitialized.
 		// Proceed with mild caution.
 
-		LOGGER.info("Savs Common Economy is initializing for Minecraft 26.1...");
+		LOGGER.info("Savs Common Economy is initializing for Minecraft 26.1 (Stable)...");
 		
 		// Load Configuration
 		ConfigManager.load();
