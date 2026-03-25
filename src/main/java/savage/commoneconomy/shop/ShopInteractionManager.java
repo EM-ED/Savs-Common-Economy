@@ -113,8 +113,14 @@ public class ShopInteractionManager {
                 } else {
                     // Shop sells (Player buys)
                     if (isAll) {
+                        if (shop.isAdmin()) {
+                            sender.sendSystemMessage(Component.literal("§cAdmin shops have infinite stock! Please type a specific amount to buy."));
+                            removePendingInteraction(sender.getUUID());
+                            return false;
+                        }
+
                         int canAfford = EconomyManager.getInstance().getBalance(sender.getUUID()).join().divideToIntegralValue(shop.getPrice()).intValue();
-                        int shopHas = shop.isAdmin() ? 2304 : ShopStockCalculator.calculateStock((ServerLevel)sender.level(), shop);
+                        int shopHas = ShopStockCalculator.calculateStock((ServerLevel)sender.level(), shop);
                         amount = Math.min(canAfford, shopHas);
                         if (amount > 2304) amount = 2304;
                     }
