@@ -13,7 +13,7 @@ base {
 repositories {
 	mavenCentral()
 	maven { url 'https://jitpack.io' }
-	maven { url "https://maven.pb4.eu" }
+	maven { url "https://maven.nucleoid.xyz/" }
 }
 
 loom {
@@ -45,6 +45,9 @@ dependencies {
 	// Permissions API
 	implementation "me.lucko:fabric-permissions-api:0.6.1"
 	include "me.lucko:fabric-permissions-api:0.6.1"
+
+	// Common Economy API
+	include(implementation("eu.pb4:common-economy-api:2.0.0"))
 }
 
 processResources {

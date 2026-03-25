@@ -52,5 +52,8 @@ public class SavsCommonEconomy implements ModInitializer {
 
 		// Listeners
 		savage.commoneconomy.listener.BankNoteListener.register();
+		
+		// Register API Provider
+		eu.pb4.common.economy.api.CommonEconomy.register("savs_common_economy", savage.commoneconomy.integration.SavsEconomyProvider.INSTANCE);
 	}
 }
