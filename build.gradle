@@ -42,9 +42,9 @@ dependencies {
 	// Redis
 	include(implementation("io.lettuce:lettuce-core:6.3.2.RELEASE"))
 
-	// Permissions API
-	implementation "me.lucko:fabric-permissions-api:0.6.1"
-	include "me.lucko:fabric-permissions-api:0.6.1"
+	// Permissions API (disabled — not yet compatible with 26.1 Mojang mappings)
+	// implementation "me.lucko:fabric-permissions-api:0.6.1"
+	// include "me.lucko:fabric-permissions-api:0.6.1"
 
 	// Common Economy API
 	include(implementation("eu.pb4:common-economy-api:2.0.0"))

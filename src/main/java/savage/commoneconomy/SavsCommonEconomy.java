@@ -30,7 +30,9 @@ public class SavsCommonEconomy implements ModInitializer {
 			AdminEconomyCommands.register(dispatcher);
 			savage.commoneconomy.command.LogCommand.register(dispatcher);
 			savage.commoneconomy.command.SellCommands.register(dispatcher);
-			ShopCommands.register(dispatcher);
+			if (ConfigManager.getConfig().enableChestShops) {
+				ShopCommands.register(dispatcher);
+			}
 		});
 
 		// Register Player Join Hook
@@ -51,11 +53,13 @@ public class SavsCommonEconomy implements ModInitializer {
 		// Register API Provider
 		eu.pb4.common.economy.api.CommonEconomy.register("savs_common_economy", savage.commoneconomy.integration.SavsEconomyProvider.INSTANCE);
 
-		// Initialize Shop System on Server Start
-		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
-			ShopManager.getInstance().setServer(server);
-			ShopManager.getInstance().load();
-			ShopInteractionManager.getInstance().register();
-		});
+		// Initialize Shop System on Server Start (only if enabled)
+		if (ConfigManager.getConfig().enableChestShops) {
+			net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+				ShopManager.getInstance().setServer(server);
+				ShopManager.getInstance().load();
+				ShopInteractionManager.getInstance().register();
+			});
+		}
 	}
 }

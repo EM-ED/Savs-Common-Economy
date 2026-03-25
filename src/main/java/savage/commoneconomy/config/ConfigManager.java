@@ -81,11 +81,31 @@ public class ConfigManager {
         }
 
         try (FileReader reader = new FileReader(WORTH_FILE)) {
-            worthConfig = GSON.fromJson(reader, WorthConfig.class);
-            if (worthConfig == null) {
-                worthConfig = new WorthConfig();
+            // First, check for legacy format migration (old "itemPrices" -> new "sellPrices")
+            com.google.gson.JsonObject rawJson = GSON.fromJson(reader, com.google.gson.JsonObject.class);
+            
+            if (rawJson != null && rawJson.has("itemPrices") && !rawJson.has("sellPrices")) {
+                // Migrate old format: copy itemPrices to sellPrices
+                SavsCommonEconomy.LOGGER.info("Migrating legacy worth.json: renaming 'itemPrices' to 'sellPrices'...");
+                rawJson.add("sellPrices", rawJson.get("itemPrices"));
+                rawJson.remove("itemPrices");
+                
+                // Parse the migrated JSON
+                worthConfig = GSON.fromJson(rawJson, WorthConfig.class);
+                if (worthConfig == null) {
+                    worthConfig = new WorthConfig();
+                }
+                // Save the migrated file
                 saveWorth();
+                SavsCommonEconomy.LOGGER.info("Successfully migrated worth.json to new format.");
+            } else {
+                worthConfig = GSON.fromJson(rawJson, WorthConfig.class);
+                if (worthConfig == null) {
+                    worthConfig = new WorthConfig();
+                    saveWorth();
+                }
             }
+            
             SavsCommonEconomy.LOGGER.info("Successfully loaded worth.json.");
         } catch (IOException e) {
             SavsCommonEconomy.LOGGER.error("Failed to load worth.json!", e);
