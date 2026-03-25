@@ -127,13 +127,36 @@ public class ShopInteractionManager {
             return true;
         });
 
-        // Block Protection
+        // Block Protection & Sign Destruction Removal
         PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, be) -> {
-            if (world.isClientSide()) return true;
+            if (world.isClientSide() || !(player instanceof ServerPlayer serverPlayer)) return true;
+
+            // Protect Shop Chests
             if (ShopManager.getInstance().isShopChest(pos)) {
-                player.sendSystemMessage(Component.literal("§cYou cannot break shop chests! Use /shop remove first."));
+                serverPlayer.sendSystemMessage(Component.literal("§cYou cannot break shop chests! Use /shop remove or break the sign first."));
                 return false;
             }
+
+            // Handle Sign Breaking
+            if (state.getBlock() instanceof WallSignBlock) {
+                BlockPos chestPos = ShopSignHelper.getAttachedChest(world, pos);
+                Shop shop = ShopManager.getInstance().getShop(chestPos);
+
+                if (shop != null) {
+                    boolean isOwner = shop.getOwnerId().equals(serverPlayer.getUUID());
+                    boolean isAdmin = savage.commoneconomy.util.PermissionsHelper.check(serverPlayer, "savscommoneconomy.admin", 2);
+
+                    if (isOwner || isAdmin) {
+                        ShopManager.getInstance().removeShop(chestPos);
+                        serverPlayer.sendSystemMessage(Component.literal("§eShop removed (sign broken)."));
+                        return true; // Allow breaking
+                    } else {
+                        serverPlayer.sendSystemMessage(Component.literal("§cYou cannot break this shop sign! Use /shop remove instead."));
+                        return false; // Cancel breaking
+                    }
+                }
+            }
+
             return true;
         });
 
