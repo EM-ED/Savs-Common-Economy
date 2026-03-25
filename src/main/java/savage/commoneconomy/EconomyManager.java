@@ -82,6 +82,19 @@ public class EconomyManager {
     }
 
     /**
+     * Gets a player's balance synchronously from the cache.
+     * Returns default balance if no cached entry exists.
+     * Safe to call from the server thread without blocking.
+     */
+    public BigDecimal getCachedBalance(UUID uuid) {
+        AccountData data = accountCache.getIfPresent(uuid);
+        if (data != null) {
+            return data.getBalance();
+        }
+        return ConfigManager.getConfig().defaultBalance;
+    }
+
+    /**
      * Adds balance to a player's account asynchronously with optimistic locking.
      * @return CompletableFuture completing with true if successful.
      */

@@ -38,7 +38,7 @@ public class EconomyCommands {
             List<String> suggestions = new ArrayList<>(names);
             suggestions.addAll(Arrays.asList(context.getSource().getServer().getPlayerNames()));
             return SharedSuggestionProvider.suggest(suggestions, builder);
-        }).join(); // Suggestion providers can wait slightly or be returned as future
+        }).thenCompose(f -> f);
     };
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {

@@ -31,7 +31,7 @@ public class AdminEconomyCommands {
             List<String> suggestions = new ArrayList<>(names);
             suggestions.addAll(Arrays.asList(context.getSource().getServer().getPlayerNames()));
             return SharedSuggestionProvider.suggest(suggestions, builder);
-        }).join();
+        }).thenCompose(f -> f);
     };
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {

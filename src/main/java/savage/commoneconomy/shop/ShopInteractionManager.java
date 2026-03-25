@@ -119,7 +119,8 @@ public class ShopInteractionManager {
                             return false;
                         }
 
-                        int canAfford = EconomyManager.getInstance().getBalance(sender.getUUID()).join().divideToIntegralValue(shop.getPrice()).intValue();
+                        java.math.BigDecimal balance = EconomyManager.getInstance().getCachedBalance(sender.getUUID());
+                        int canAfford = balance.divideToIntegralValue(shop.getPrice()).intValue();
                         int shopHas = ShopStockCalculator.calculateStock((ServerLevel)sender.level(), shop);
                         amount = Math.min(canAfford, shopHas);
                         if (amount > 2304) amount = 2304;
@@ -166,9 +167,9 @@ public class ShopInteractionManager {
             return true;
         });
 
-        // Periodic Sign Updates
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (server.getTickCount() % 40 == 0) { // Every 2 seconds
+            // Periodic Sign Updates (every 2 seconds)
+            if (server.getTickCount() % 40 == 0) {
                 for (ServerLevel world : server.getAllLevels()) {
                     for (Shop shop : ShopManager.getInstance().getAllShops()) {
                         if (world.dimension().identifier().toString().equals(shop.getWorldId())) {
@@ -178,6 +179,25 @@ public class ShopInteractionManager {
                             }
                         }
                     }
+                }
+            }
+            
+            // Orphan Shop Cleanup (every 5 seconds)
+            if (server.getTickCount() % 100 == 0) {
+                java.util.List<BlockPos> toRemove = new java.util.ArrayList<>();
+                for (ServerLevel world : server.getAllLevels()) {
+                    String worldId = world.dimension().identifier().toString();
+                    for (Shop shop : ShopManager.getInstance().getAllShops()) {
+                        if (worldId.equals(shop.getWorldId())) {
+                            BlockPos chestPos = shop.getChestLocation();
+                            if (!(world.getBlockState(chestPos).getBlock() instanceof net.minecraft.world.level.block.ChestBlock)) {
+                                toRemove.add(chestPos);
+                            }
+                        }
+                    }
+                }
+                for (BlockPos pos : toRemove) {
+                    ShopManager.getInstance().removeShop(pos);
                 }
             }
         });
