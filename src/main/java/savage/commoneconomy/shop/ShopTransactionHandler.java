@@ -1,0 +1,225 @@
+package savage.commoneconomy.shop;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import savage.commoneconomy.EconomyManager;
+
+import java.math.BigDecimal;
+
+/**
+ * Executes shop transactions between players and containers.
+ */
+public class ShopTransactionHandler {
+
+    public static void handlePurchase(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world, int amount) {
+        BigDecimal unitPrice = shop.getPrice();
+        BigDecimal totalCost = unitPrice.multiply(BigDecimal.valueOf(amount));
+        
+        // 1. Initial Checks (Main Thread)
+        if (!shop.isAdmin() && !shop.canSell(amount)) {
+            player.sendSystemMessage(Component.literal("§cShop is out of stock!"));
+            return;
+        }
+
+        // 2. Asynchronous Fund Removal
+        EconomyManager.getInstance().removeBalance(player.getUUID(), totalCost).thenAccept(success -> {
+            if (success) {
+                // 3. Finalize on Main Thread
+                world.getServer().execute(() -> {
+                    if (finalizePurchase(player, shop, world, amount)) {
+                        // Success! Pay the shop owner (if not admin)
+                        if (!shop.isAdmin()) {
+                            EconomyManager.getInstance().addBalance(shop.getOwnerId(), totalCost);
+                        }
+                        player.sendSystemMessage(Component.literal("§aTransaction successful! Bought " + amount + "x items."));
+                        
+                        BlockPos signPos = ShopSignHelper.findSignForChest(world, shop.getChestLocation());
+                        if (signPos != null) {
+                            ShopSignHelper.updateSign(world, signPos, shop);
+                        }
+                        ShopManager.getInstance().save();
+                    } else {
+                        // Refund on failure
+                        EconomyManager.getInstance().addBalance(player.getUUID(), totalCost);
+                        player.sendSystemMessage(Component.literal("§cTransaction failed! Item transfer error."));
+                    }
+                });
+            } else {
+                player.sendSystemMessage(Component.literal("§cInsufficient funds! (Need " + EconomyManager.getInstance().format(totalCost) + ")"));
+            }
+        });
+    }
+
+    public static void handlePurchase(ServerPlayer player, Shop shop, Level world) {
+        handlePurchase(player, shop, (net.minecraft.server.level.ServerLevel)world, 1);
+    }
+
+    private static boolean finalizePurchase(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world, int amount) {
+        BlockPos chestPos = shop.getChestLocation();
+        BlockEntity be = world.getBlockEntity(chestPos);
+        ItemStack template = shop.getItem().copy();
+        template.setCount(amount);
+        
+        if (shop.isAdmin()) {
+            // Admin shop: just give items
+            player.getInventory().add(template);
+            return true;
+        }
+
+        if (be instanceof Container container) {
+            // Player shop: check and remove from container
+            if (removeItemsFromContainer(container, shop.getItem(), amount)) {
+                player.getInventory().add(template);
+                shop.removeStock(amount);
+                container.setChanged();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static void handleSale(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world, int amount) {
+        BigDecimal unitPrice = shop.getPrice();
+        BigDecimal totalPayout = unitPrice.multiply(BigDecimal.valueOf(amount));
+        ItemStack template = shop.getItem();
+
+        // 1. Initial Checks (Main Thread)
+        int playerHas = countItems(player, template);
+        if (playerHas < amount) {
+            amount = playerHas;
+            totalPayout = unitPrice.multiply(BigDecimal.valueOf(amount));
+        }
+
+        if (amount <= 0) {
+            player.sendSystemMessage(Component.literal("§cYou don't have the required items!"));
+            return;
+        }
+
+        final int finalAmount = amount;
+        final BigDecimal finalPayout = totalPayout;
+
+        // 2. Asynchronous Owner Balance Check (If not admin)
+        if (shop.isAdmin()) {
+            finalizeSale(player, shop, world, amount);
+            EconomyManager.getInstance().addBalance(player.getUUID(), totalPayout);
+            player.sendSystemMessage(Component.literal("§aSold " + amount + "x items to Admin Shop!"));
+        } else {
+            // Check if shop owner can afford it
+            EconomyManager.getInstance().removeBalance(shop.getOwnerId(), totalPayout).thenAccept(success -> {
+                if (success) {
+                    world.getServer().execute(() -> {
+                        if (finalizeSale(player, shop, world, finalAmount)) {
+                            EconomyManager.getInstance().addBalance(player.getUUID(), finalPayout);
+                            player.sendSystemMessage(Component.literal("§aSold " + finalAmount + "x items to shop!"));
+                            
+                            BlockPos signPos = ShopSignHelper.findSignForChest(world, shop.getChestLocation());
+                            if (signPos != null) {
+                                ShopSignHelper.updateSign(world, signPos, shop);
+                            }
+                            ShopManager.getInstance().save();
+                        } else {
+                            // Refund shop owner on failure
+                            EconomyManager.getInstance().addBalance(shop.getOwnerId(), finalPayout);
+                            player.sendSystemMessage(Component.literal("§cTransaction failed! Shop inventory error."));
+                        }
+                    });
+                } else {
+                    player.sendSystemMessage(Component.literal("§cShop owner is out of funds!"));
+                }
+            });
+        }
+    }
+
+    private static boolean finalizeSale(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world, int amount) {
+        ItemStack template = shop.getItem();
+        if (removeItemsFromPlayer(player, template, amount)) {
+            if (shop.isAdmin()) return true;
+
+            BlockEntity be = world.getBlockEntity(shop.getChestLocation());
+            if (be instanceof Container container) {
+                ItemStack toAdd = template.copy();
+                toAdd.setCount(amount);
+                if (addItemToContainer(container, toAdd)) {
+                    shop.addStock(amount);
+                    container.setChanged();
+                    return true;
+                }
+                // Rollback: return items to player if chest was full
+                player.getInventory().add(toAdd);
+            }
+        }
+        return false;
+    }
+
+    private static int countItems(ServerPlayer player, ItemStack template) {
+        int count = 0;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (ItemStack.isSameItemSameComponents(stack, template)) count += stack.getCount();
+        }
+        return count;
+    }
+
+    private static boolean removeItemsFromPlayer(ServerPlayer player, ItemStack template, int amount) {
+        for (int i = 0; i < player.getInventory().getContainerSize() && amount > 0; i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (ItemStack.isSameItemSameComponents(stack, template)) {
+                int take = Math.min(amount, stack.getCount());
+                stack.shrink(take);
+                amount -= take;
+            }
+        }
+        return amount == 0;
+    }
+
+    private static boolean removeItemsFromContainer(Container container, ItemStack template, int amount) {
+        // First check total
+        int available = 0;
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack stack = container.getItem(i);
+            if (ItemStack.isSameItemSameComponents(stack, template)) available += stack.getCount();
+        }
+        if (available < amount) return false;
+
+        // Perform removal
+        for (int i = 0; i < container.getContainerSize() && amount > 0; i++) {
+            ItemStack stack = container.getItem(i);
+            if (ItemStack.isSameItemSameComponents(stack, template)) {
+                int take = Math.min(amount, stack.getCount());
+                stack.shrink(take);
+                amount -= take;
+            }
+        }
+        return true;
+    }
+
+    private static boolean addItemToContainer(Container container, ItemStack stack) {
+        // Try to stack
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack target = container.getItem(i);
+            if (ItemStack.isSameItemSameComponents(target, stack)) {
+                int canAdd = Math.min(stack.getCount(), target.getMaxStackSize() - target.getCount());
+                if (canAdd > 0) {
+                    target.grow(canAdd);
+                    stack.shrink(canAdd);
+                }
+            }
+        }
+        // Try empty slots
+        if (!stack.isEmpty()) {
+            for (int i = 0; i < container.getContainerSize(); i++) {
+                if (container.getItem(i).isEmpty()) {
+                    container.setItem(i, stack.copy());
+                    stack.setCount(0);
+                    break;
+                }
+            }
+        }
+        return stack.isEmpty();
+    }
+}

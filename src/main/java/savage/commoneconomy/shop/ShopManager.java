@@ -1,0 +1,205 @@
+package savage.commoneconomy.shop;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.item.ItemStack;
+import savage.commoneconomy.SavsCommonEconomy;
+
+import java.io.*;
+import java.lang.reflect.Type;
+import java.math.BigDecimal;
+import java.nio.file.Path;
+import java.util.*;
+
+/**
+ * Handles shop storage, loading, and saving.
+ */
+public class ShopManager {
+    private static ShopManager instance;
+    private final Map<BlockPos, Shop> shops = new HashMap<>();
+    private final Map<UUID, Set<BlockPos>> playerShops = new HashMap<>();
+    private final File shopsFile;
+    private final Gson gson;
+    private MinecraftServer server;
+
+    private ShopManager() {
+        Path configDir = FabricLoader.getInstance().getConfigDir().resolve("savs-common-economy");
+        File dir = configDir.toFile();
+        if (!dir.exists()) dir.mkdirs();
+        this.shopsFile = configDir.resolve("shops.json").toFile();
+        this.gson = new GsonBuilder().setPrettyPrinting().create();
+    }
+
+    public static ShopManager getInstance() {
+        if (instance == null) {
+            instance = new ShopManager();
+        }
+        return instance;
+    }
+
+    public void setServer(MinecraftServer server) {
+        this.server = server;
+    }
+
+    public Shop createShop(BlockPos pos, String worldId, UUID ownerId, String ownerName, ItemStack item,
+                          BigDecimal price, boolean buying, ShopType type) {
+        UUID shopId = UUID.randomUUID();
+        Shop shop = new Shop(shopId, worldId, pos, ownerId, ownerName, type, item, price, buying, 0);
+        shops.put(pos, shop);
+        playerShops.computeIfAbsent(ownerId, k -> new HashSet<>()).add(pos);
+        save();
+        return shop;
+    }
+
+    public boolean isShopChest(BlockPos pos) {
+        return shops.containsKey(pos);
+    }
+
+    public Collection<Shop> getAllShops() {
+        return shops.values();
+    }
+
+    public Collection<Shop> getPlayerShops(UUID ownerId) {
+        Set<BlockPos> positions = playerShops.get(ownerId);
+        if (positions == null) return Collections.emptyList();
+        List<Shop> result = new ArrayList<>();
+        for (BlockPos pos : positions) {
+            Shop shop = shops.get(pos);
+            if (shop != null) result.add(shop);
+        }
+        return result;
+    }
+
+    public Shop getShop(BlockPos pos) {
+        return shops.get(pos);
+    }
+
+    public void removeShop(BlockPos pos) {
+        Shop shop = shops.remove(pos);
+        if (shop != null) {
+            Set<BlockPos> ownerShops = playerShops.get(shop.getOwnerId());
+            if (ownerShops != null) {
+                ownerShops.remove(pos);
+                if (ownerShops.isEmpty()) playerShops.remove(shop.getOwnerId());
+            }
+            save();
+        }
+    }
+
+    public void save() {
+        if (server == null) return;
+        try (FileWriter writer = new FileWriter(shopsFile)) {
+            List<ShopData> shopDataList = new ArrayList<>();
+            for (Shop shop : shops.values()) {
+                shopDataList.add(new ShopData(shop, server));
+            }
+            gson.toJson(new ShopsContainer(shopDataList), writer);
+        } catch (IOException e) {
+            SavsCommonEconomy.LOGGER.error("Failed to save shops.json", e);
+        }
+    }
+
+    public void load() {
+        if (!shopsFile.exists() || server == null) return;
+
+        try (FileReader reader = new FileReader(shopsFile)) {
+            Type type = new TypeToken<ShopsContainer>() {}.getType();
+            ShopsContainer container = gson.fromJson(reader, type);
+
+            if (container != null && container.shops != null) {
+                shops.clear();
+                playerShops.clear();
+                for (ShopData data : container.shops) {
+                    try {
+                        Shop shop = data.toShop(server);
+                        shops.put(shop.getChestLocation(), shop);
+                        playerShops.computeIfAbsent(shop.getOwnerId(), k -> new HashSet<>()).add(shop.getChestLocation());
+                    } catch (Exception e) {
+                        SavsCommonEconomy.LOGGER.error("Failed to load a shop from shops.json", e);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            SavsCommonEconomy.LOGGER.error("Failed to load shops.json", e);
+        }
+    }
+
+    private static class ShopsContainer {
+        List<ShopData> shops;
+        ShopsContainer(List<ShopData> shops) { this.shops = shops; }
+    }
+
+    private static class ShopData {
+        String shopId;
+        String worldId;
+        BlockPosData chestLocation;
+        String ownerId;
+        String ownerName;
+        String type;
+        String itemStackBase64;
+        String price;
+        boolean buying;
+        int stock;
+
+        ShopData(Shop shop, MinecraftServer server) {
+            this.shopId = shop.getShopId().toString();
+            this.worldId = shop.getWorldId();
+            this.chestLocation = new BlockPosData(shop.getChestLocation());
+            this.ownerId = shop.getOwnerId().toString();
+            this.ownerName = shop.getOwnerName();
+            this.type = shop.getType().name();
+            this.price = shop.getPrice().toString();
+            this.buying = shop.isBuying();
+            this.stock = shop.getStock();
+
+            // Encode ItemStack to Base64 NBT
+            try {
+                RegistryOps<Tag> ops = server.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
+                CompoundTag nbt = (CompoundTag) ItemStack.CODEC.encodeStart(ops, shop.getItem()).getOrThrow();
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                NbtIo.writeCompressed(nbt, baos);
+                this.itemStackBase64 = Base64.getEncoder().encodeToString(baos.toByteArray());
+            } catch (Exception e) {
+                SavsCommonEconomy.LOGGER.error("Failed to encode item stack for shop " + shopId, e);
+            }
+        }
+
+        Shop toShop(MinecraftServer server) {
+            UUID id = UUID.fromString(shopId);
+            BlockPos pos = chestLocation.toBlockPos();
+            UUID owner = UUID.fromString(ownerId);
+            ShopType shopType = ShopType.valueOf(this.type);
+            BigDecimal p = new BigDecimal(this.price);
+
+            ItemStack itemStack = ItemStack.EMPTY;
+            if (this.itemStackBase64 != null) {
+                try {
+                    byte[] bytes = Base64.getDecoder().decode(this.itemStackBase64);
+                    ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+                    CompoundTag nbt = NbtIo.readCompressed(bais, net.minecraft.nbt.NbtAccounter.unlimitedHeap());
+                    RegistryOps<Tag> ops = server.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
+                    itemStack = ItemStack.CODEC.parse(ops, nbt).getOrThrow();
+                } catch (Exception e) {
+                    SavsCommonEconomy.LOGGER.error("Failed to decode item stack for shop " + shopId, e);
+                }
+            }
+
+            return new Shop(id, worldId, pos, owner, ownerName, shopType, itemStack, p, buying, stock);
+        }
+    }
+
+    private static class BlockPosData {
+        int x, y, z;
+        BlockPosData(BlockPos pos) { this.x = pos.getX(); this.y = pos.getY(); this.z = pos.getZ(); }
+        BlockPos toBlockPos() { return new BlockPos(x, y, z); }
+    }
+}
