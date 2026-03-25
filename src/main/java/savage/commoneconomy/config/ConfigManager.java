@@ -20,15 +20,22 @@ public class ConfigManager {
     
     private static final java.nio.file.Path CONFIG_DIR = FabricLoader.getInstance().getConfigDir().resolve("savs-common-economy");
     private static final File CONFIG_FILE = CONFIG_DIR.resolve("config.json").toFile();
+    private static final File WORTH_FILE = CONFIG_DIR.resolve("worth.json").toFile();
     
     private static EconomyConfig currentConfig = new EconomyConfig();
+    private static WorthConfig worthConfig = new WorthConfig();
 
     /**
      * Loads the config from disk, or saves default if it doesn't exist.
      */
     public static void load() {
+        loadMain();
+        loadWorth();
+    }
+
+    private static void loadMain() {
         if (!CONFIG_FILE.exists()) {
-            save(); // Save defaults
+            saveMain(); // Save defaults
             return;
         }
 
@@ -36,7 +43,7 @@ public class ConfigManager {
             currentConfig = GSON.fromJson(reader, EconomyConfig.class);
             if (currentConfig == null) {
                 currentConfig = new EconomyConfig();
-                save();
+                saveMain();
             }
             SavsCommonEconomy.LOGGER.info("Successfully loaded configuration.");
         } catch (IOException e) {
@@ -45,9 +52,14 @@ public class ConfigManager {
     }
 
     /**
-     * Saves the current config to disk.
+     * Saves all configurations to disk.
      */
     public static void save() {
+        saveMain();
+        saveWorth();
+    }
+
+    private static void saveMain() {
         try {
             File dir = CONFIG_DIR.toFile();
             if (!dir.exists()) {
@@ -62,10 +74,50 @@ public class ConfigManager {
         }
     }
 
+    private static void loadWorth() {
+        if (!WORTH_FILE.exists()) {
+            saveWorth();
+            return;
+        }
+
+        try (FileReader reader = new FileReader(WORTH_FILE)) {
+            worthConfig = GSON.fromJson(reader, WorthConfig.class);
+            if (worthConfig == null) {
+                worthConfig = new WorthConfig();
+                saveWorth();
+            }
+            SavsCommonEconomy.LOGGER.info("Successfully loaded worth.json.");
+        } catch (IOException e) {
+            SavsCommonEconomy.LOGGER.error("Failed to load worth.json!", e);
+        }
+    }
+
+    private static void saveWorth() {
+        try {
+            File dir = CONFIG_DIR.toFile();
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            try (FileWriter writer = new FileWriter(WORTH_FILE)) {
+                GSON.toJson(worthConfig, writer);
+                SavsCommonEconomy.LOGGER.info("Successfully saved worth.json.");
+            }
+        } catch (IOException e) {
+            SavsCommonEconomy.LOGGER.error("Failed to save worth.json!", e);
+        }
+    }
+
     /**
      * @return The active configuration instance.
      */
     public static EconomyConfig getConfig() {
         return currentConfig;
+    }
+
+    /**
+     * @return The active worth configuration instance.
+     */
+    public static WorthConfig getWorth() {
+        return worthConfig;
     }
 }
