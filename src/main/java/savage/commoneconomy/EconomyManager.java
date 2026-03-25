@@ -47,11 +47,15 @@ public class EconomyManager {
     
     private void initStorage() {
         var config = ConfigManager.getConfig();
-        if (config.storage.type == savage.commoneconomy.config.EconomyConfig.StorageType.MYSQL || 
-            config.storage.type == savage.commoneconomy.config.EconomyConfig.StorageType.POSTGRESQL) {
+        String type = config.storage.type.toUpperCase();
+        if ("MYSQL".equals(type) || "POSTGRESQL".equals(type) || "MARIADB".equals(type) || "SQLITE".equals(type)) {
             this.storage = new savage.commoneconomy.storage.SqlStorage(ioExecutor);
         } else {
             this.storage = new JsonStorage(ioExecutor);
+        }
+
+        if (config.redis.enabled) {
+            savage.commoneconomy.util.RedisManager.getInstance().connect();
         }
     }
 
@@ -89,7 +93,9 @@ public class EconomyManager {
             account.incrementVersion();
             
             return storage.saveAccount(uuid, account).thenApply(v -> {
-                savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+                if (ConfigManager.getConfig().redis.enabled) {
+                    savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+                }
                 return true;
             });
         }, ioExecutor);
@@ -111,7 +117,9 @@ public class EconomyManager {
             account.incrementVersion();
             
             return storage.saveAccount(uuid, account).thenApply(v -> {
-                savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+                if (ConfigManager.getConfig().redis.enabled) {
+                    savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+                }
                 return true;
             });
         }, ioExecutor);
@@ -155,7 +163,9 @@ public class EconomyManager {
             account.setBalance(balance);
             account.incrementVersion();
             return storage.saveAccount(uuid, account).thenAccept(v -> {
-                savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+                if (ConfigManager.getConfig().redis.enabled) {
+                    savage.commoneconomy.util.RedisManager.getInstance().publishUpdate(uuid);
+                }
             });
         }, ioExecutor);
     }
@@ -183,8 +193,9 @@ public class EconomyManager {
      */
     public String format(BigDecimal balance) {
         DecimalFormat df = new DecimalFormat("#,##0.00");
-        String symbol = ConfigManager.getConfig().currencySymbol;
-        return symbol + df.format(balance);
+        var config = ConfigManager.getConfig();
+        String symbol = config.currencySymbol;
+        return config.symbolBeforeAmount ? symbol + df.format(balance) : df.format(balance) + symbol;
     }
 
     /**

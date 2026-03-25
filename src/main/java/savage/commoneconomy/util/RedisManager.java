@@ -4,6 +4,8 @@ import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.pubsub.RedisPubSubAdapter;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import io.lettuce.core.pubsub.api.async.RedisPubSubAsyncCommands;
+import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
 import savage.commoneconomy.EconomyManager;
 import savage.commoneconomy.SavsCommonEconomy;
 import savage.commoneconomy.config.ConfigManager;
@@ -19,15 +21,11 @@ public class RedisManager {
     private static RedisManager instance;
     private RedisClient client;
     private StatefulRedisPubSubConnection<String, String> pubSubConnection;
-    private final String channel;
+    private String channel;
 
     private RedisManager() {
         var config = ConfigManager.getConfig().redis;
         this.channel = config.channel;
-        
-        if (config.enabled) {
-            init(config);
-        }
     }
 
     public static RedisManager getInstance() {
@@ -37,18 +35,23 @@ public class RedisManager {
         return instance;
     }
 
-    private void init(savage.commoneconomy.config.EconomyConfig.RedisConfig config) {
+    /**
+     * Connects to the Redis server and subscribes to the update channel.
+     */
+    public void connect() {
+        if (client != null) return;
+
+        var config = ConfigManager.getConfig().redis;
         try {
             RedisURI uri = RedisURI.Builder.redis(config.host, config.port)
                     .withPassword(config.password.toCharArray())
-                    .withTimeout(Duration.ofMillis(config.timeout_ms))
-                    .withClientName(config.client_name)
+                    .withTimeout(Duration.ofMillis(30000))
                     .build();
 
             this.client = RedisClient.create(uri);
             this.pubSubConnection = client.connectPubSub();
 
-            pubSubConnection.addListener(new RedisPubSubAdapter<>() {
+            pubSubConnection.addListener(new RedisPubSubAdapter<String, String>() {
                 @Override
                 public void message(String channel, String message) {
                     if (channel.equals(RedisManager.this.channel)) {
@@ -69,7 +72,6 @@ public class RedisManager {
      */
     public void publishUpdate(UUID uuid) {
         if (pubSubConnection != null && pubSubConnection.isOpen()) {
-            // Format: UPDATE:<uuid>
             pubSubConnection.async().publish(channel, "UPDATE:" + uuid.toString());
         }
     }
@@ -82,7 +84,6 @@ public class RedisManager {
             String uuidStr = message.substring(7);
             try {
                 UUID uuid = UUID.fromString(uuidStr);
-                // Invalidate the local cache to force a reload from storage on next access
                 EconomyManager.getInstance().invalidateCache(uuid);
                 if (ConfigManager.getConfig().redis.debugLogging) {
                     SavsCommonEconomy.LOGGER.info("Redis: Invalidated cache for " + uuid);
@@ -93,6 +94,9 @@ public class RedisManager {
         }
     }
 
+    /**
+     * Shuts down the Redis connections.
+     */
     public void shutdown() {
         if (pubSubConnection != null) {
             pubSubConnection.close();

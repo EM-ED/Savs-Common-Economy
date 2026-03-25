@@ -35,6 +35,9 @@ dependencies {
 	
 	// Database & SQL
 	include(implementation("com.zaxxer:HikariCP:6.2.1"))
+	include(implementation("org.mariadb.jdbc:mariadb-java-client:${project.mariadb_version}"))
+	include(implementation("org.postgresql:postgresql:${project.postgresql_version}"))
+	include(implementation("org.xerial:sqlite-jdbc:${project.sqlite_version}"))
 	
 	// Redis
 	include(implementation("io.lettuce:lettuce-core:6.3.2.RELEASE"))

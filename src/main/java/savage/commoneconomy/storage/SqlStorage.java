@@ -26,43 +26,74 @@ public class SqlStorage implements EconomyStorage {
     public SqlStorage(ExecutorService executor) {
         this.executor = executor;
         initConnection();
-        createTable();
     }
 
     private void initConnection() {
         var config = ConfigManager.getConfig().storage;
         HikariConfig hikariConfig = new HikariConfig();
-        hikariConfig.setJdbcUrl("jdbc:mariadb://" + config.host + ":" + config.port + "/" + config.database);
-        hikariConfig.setUsername(config.user);
-        hikariConfig.setPassword(config.password);
-        hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
-        hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
-        hikariConfig.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
-        hikariConfig.setMaximumPoolSize(10);
-        hikariConfig.setPoolName("SavsEconomyPool");
+        
+        String jdbcUrl;
+        if ("POSTGRESQL".equalsIgnoreCase(config.type)) {
+            jdbcUrl = "jdbc:postgresql://" + config.host + ":" + config.port + "/" + config.database;
+            hikariConfig.setDriverClassName("org.postgresql.Driver");
+        } else if ("SQLITE".equalsIgnoreCase(config.type)) {
+            // SQLite stored in the config directory alongside config.json
+            jdbcUrl = "jdbc:sqlite:config/savs-common-economy/economy.db";
+            hikariConfig.setDriverClassName("org.sqlite.JDBC");
+            hikariConfig.setPoolName("SavsEconomyLitePool");
+            hikariConfig.setMaximumPoolSize(1); // SQLite is best with a single write connection
+        } else {
+            jdbcUrl = "jdbc:mariadb://" + config.host + ":" + config.port + "/" + config.database;
+            hikariConfig.setDriverClassName("org.mariadb.jdbc.Driver");
+            hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
+            hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
+            hikariConfig.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+            hikariConfig.setMaximumPoolSize(config.poolSize);
+        }
+        
+        hikariConfig.setJdbcUrl(jdbcUrl);
+        if (!"SQLITE".equalsIgnoreCase(config.type)) {
+            hikariConfig.setUsername(config.user);
+            hikariConfig.setPassword(config.password);
+            hikariConfig.setConnectionTimeout(config.connectionTimeout);
+            hikariConfig.setIdleTimeout(config.idleTimeout);
+        }
 
         this.dataSource = new HikariDataSource(hikariConfig);
+        setupTable();
     }
 
-    private void createTable() {
+    private void setupTable() {
+        String prefix = ConfigManager.getConfig().storage.tablePrefix;
+        String sql;
+        if ("POSTGRESQL".equalsIgnoreCase(ConfigManager.getConfig().storage.type)) {
+            sql = "CREATE TABLE IF NOT EXISTS " + prefix + "balances (" +
+                  "uuid UUID PRIMARY KEY, " +
+                  "name VARCHAR(255), " +
+                  "balance DECIMAL(30, 2), " +
+                  "version BIGINT DEFAULT 0)";
+        } else {
+            // MariaDB and SQLite both use VARCHAR/TEXT for UUIDs
+            sql = "CREATE TABLE IF NOT EXISTS " + prefix + "balances (" +
+                  "uuid VARCHAR(36) PRIMARY KEY, " +
+                  "name VARCHAR(255), " +
+                  "balance DECIMAL(30, 2), " +
+                  "version BIGINT DEFAULT 0)";
+        }
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
-            stmt.execute("CREATE TABLE IF NOT EXISTS savs_economy_balances (" +
-                    "uuid VARCHAR(36) PRIMARY KEY, " +
-                    "name VARCHAR(16) NOT NULL, " +
-                    "balance DECIMAL(20,2) NOT NULL, " +
-                    "version BIGINT NOT NULL DEFAULT 0" +
-                    ")");
+            stmt.execute(sql);
         } catch (SQLException e) {
-            SavsCommonEconomy.LOGGER.error("Failed to create SQL table", e);
+            SavsCommonEconomy.LOGGER.error("Failed to setup SQL tables!", e);
         }
     }
 
     @Override
     public CompletableFuture<AccountData> loadAccount(UUID uuid) {
         return CompletableFuture.supplyAsync(() -> {
+            String prefix = ConfigManager.getConfig().storage.tablePrefix;
             try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement("SELECT name, balance, version FROM savs_economy_balances WHERE uuid = ?")) {
+                 PreparedStatement stmt = conn.prepareStatement("SELECT name, balance, version FROM " + prefix + "balances WHERE uuid = ?")) {
                 stmt.setString(1, uuid.toString());
                 try (ResultSet rs = stmt.executeQuery()) {
                     if (rs.next()) {
@@ -81,20 +112,29 @@ public class SqlStorage implements EconomyStorage {
     @Override
     public CompletableFuture<Void> saveAccount(UUID uuid, AccountData data) {
         return CompletableFuture.runAsync(() -> {
-            // Use Optimistic Locking: only update if version matches (if implemented in DB)
-            // For now, simple UPSERT
-            String sql = "INSERT INTO savs_economy_balances (uuid, name, balance, version) VALUES (?, ?, ?, ?) " +
+            String prefix = ConfigManager.getConfig().storage.tablePrefix;
+            String query;
+            if ("POSTGRESQL".equalsIgnoreCase(ConfigManager.getConfig().storage.type) || 
+                "SQLITE".equalsIgnoreCase(ConfigManager.getConfig().storage.type)) {
+                query = "INSERT INTO " + prefix + "balances (uuid, name, balance, version) VALUES (?, ?, ?, ?) " +
+                         "ON CONFLICT (uuid) DO UPDATE SET name = EXCLUDED.name, balance = EXCLUDED.balance, version = EXCLUDED.version";
+            } else {
+                query = "INSERT INTO " + prefix + "balances (uuid, name, balance, version) VALUES (?, ?, ?, ?) " +
                          "ON DUPLICATE KEY UPDATE name = ?, balance = ?, version = ?";
+            }
             try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+                 PreparedStatement stmt = conn.prepareStatement(query)) {
                 stmt.setString(1, uuid.toString());
                 stmt.setString(2, data.getName());
                 stmt.setBigDecimal(3, data.getBalance());
                 stmt.setLong(4, data.getVersion());
                 
-                stmt.setString(5, data.getName());
-                stmt.setBigDecimal(6, data.getBalance());
-                stmt.setLong(7, data.getVersion());
+                if (!"POSTGRESQL".equalsIgnoreCase(ConfigManager.getConfig().storage.type) && 
+                    !"SQLITE".equalsIgnoreCase(ConfigManager.getConfig().storage.type)) {
+                    stmt.setString(5, data.getName());
+                    stmt.setBigDecimal(6, data.getBalance());
+                    stmt.setLong(7, data.getVersion());
+                }
                 
                 stmt.executeUpdate();
             } catch (SQLException e) {
@@ -107,8 +147,9 @@ public class SqlStorage implements EconomyStorage {
     public CompletableFuture<Map<UUID, AccountData>> loadAllAccounts() {
         return CompletableFuture.supplyAsync(() -> {
             Map<UUID, AccountData> accounts = new HashMap<>();
+            String prefix = ConfigManager.getConfig().storage.tablePrefix;
             try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement("SELECT uuid, name, balance, version FROM savs_economy_balances")) {
+                 PreparedStatement stmt = conn.prepareStatement("SELECT uuid, name, balance, version FROM " + prefix + "balances")) {
                 try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
                         UUID uuid = UUID.fromString(rs.getString("uuid"));
@@ -127,8 +168,9 @@ public class SqlStorage implements EconomyStorage {
     @Override
     public CompletableFuture<Void> deleteAccount(UUID uuid) {
         return CompletableFuture.runAsync(() -> {
+            String prefix = ConfigManager.getConfig().storage.tablePrefix;
             try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement("DELETE FROM savs_economy_balances WHERE uuid = ?")) {
+                 PreparedStatement stmt = conn.prepareStatement("DELETE FROM " + prefix + "balances WHERE uuid = ?")) {
                 stmt.setString(1, uuid.toString());
                 stmt.executeUpdate();
             } catch (SQLException e) {
