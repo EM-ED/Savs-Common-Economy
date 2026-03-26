@@ -167,14 +167,20 @@ public class ShopInteractionManager {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            // Periodic Sign Updates (every 2 seconds)
-            if (server.getTickCount() % 40 == 0) {
-                for (ServerLevel world : server.getAllLevels()) {
-                    for (Shop shop : ShopManager.getInstance().getAllShops()) {
-                        if (world.dimension().identifier().toString().equals(shop.getWorldId())) {
-                            BlockPos signPos = ShopSignHelper.findSignForChest(world, shop.getChestLocation());
-                            if (signPos != null) {
-                                ShopSignHelper.updateSign(world, signPos, shop);
+            // Dirty Shop Sign Updates (every 1 second)
+            // Only processes shops whose chest contents actually changed
+            if (server.getTickCount() % 20 == 0) {
+                java.util.Set<BlockPos> dirty = ShopManager.getInstance().consumeDirtyShops();
+                if (!dirty.isEmpty()) {
+                    for (ServerLevel world : server.getAllLevels()) {
+                        String worldId = world.dimension().identifier().toString();
+                        for (BlockPos chestPos : dirty) {
+                            Shop shop = ShopManager.getInstance().getShop(chestPos);
+                            if (shop != null && worldId.equals(shop.getWorldId())) {
+                                BlockPos signPos = ShopSignHelper.findSignForChest(world, chestPos);
+                                if (signPos != null) {
+                                    ShopSignHelper.updateSign(world, signPos, shop);
+                                }
                             }
                         }
                     }

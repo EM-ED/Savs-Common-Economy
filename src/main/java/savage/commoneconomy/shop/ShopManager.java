@@ -29,6 +29,7 @@ public class ShopManager {
     }
     private final Map<BlockPos, Shop> shops = new HashMap<>();
     private final Map<UUID, Set<BlockPos>> playerShops = new HashMap<>();
+    private final Set<BlockPos> dirtyShops = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final File shopsFile;
     private final Gson gson;
     private MinecraftServer server;
@@ -61,6 +62,24 @@ public class ShopManager {
 
     public boolean isShopChest(BlockPos pos) {
         return shops.containsKey(pos);
+    }
+
+    /**
+     * Marks a shop chest as dirty so its sign will be updated on the next tick cycle.
+     * Called from the ChestBlockEntityMixin when chest contents change.
+     */
+    public void markDirty(BlockPos pos) {
+        dirtyShops.add(pos);
+    }
+
+    /**
+     * Returns and clears all dirty shop positions.
+     */
+    public Set<BlockPos> consumeDirtyShops() {
+        if (dirtyShops.isEmpty()) return java.util.Collections.emptySet();
+        Set<BlockPos> snapshot = new HashSet<>(dirtyShops);
+        dirtyShops.clear();
+        return snapshot;
     }
 
     public Collection<Shop> getAllShops() {
