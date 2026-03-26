@@ -24,7 +24,9 @@ import java.util.*;
  * Handles shop storage, loading, and saving.
  */
 public class ShopManager {
-    private static ShopManager instance;
+    private static class Holder {
+        static final ShopManager INSTANCE = new ShopManager();
+    }
     private final Map<BlockPos, Shop> shops = new HashMap<>();
     private final Map<UUID, Set<BlockPos>> playerShops = new HashMap<>();
     private final File shopsFile;
@@ -40,10 +42,7 @@ public class ShopManager {
     }
 
     public static ShopManager getInstance() {
-        if (instance == null) {
-            instance = new ShopManager();
-        }
-        return instance;
+        return Holder.INSTANCE;
     }
 
     public void setServer(MinecraftServer server) {

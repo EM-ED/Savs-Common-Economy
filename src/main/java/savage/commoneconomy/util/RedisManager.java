@@ -18,7 +18,9 @@ import java.util.UUID;
  */
 public class RedisManager {
 
-    private static RedisManager instance;
+    private static class Holder {
+        static final RedisManager INSTANCE = new RedisManager();
+    }
     private RedisClient client;
     private StatefulRedisPubSubConnection<String, String> pubSubConnection;
     private String channel;
@@ -29,10 +31,7 @@ public class RedisManager {
     }
 
     public static RedisManager getInstance() {
-        if (instance == null) {
-            instance = new RedisManager();
-        }
-        return instance;
+        return Holder.INSTANCE;
     }
 
     /**

@@ -21,7 +21,10 @@ import java.util.stream.Collectors;
  * Handles caching, balance manipulation, and sync orchestration.
  */
 public class EconomyManager {
-    private static EconomyManager INSTANCE;
+    // Holder pattern: lazy initialization + thread-safe (JVM guarantees atomic class loading)
+    private static class Holder {
+        static final EconomyManager INSTANCE = new EconomyManager();
+    }
     
     // In-memory cache for player accounts
     private final Cache<UUID, AccountData> accountCache;
@@ -64,10 +67,7 @@ public class EconomyManager {
     }
 
     public static EconomyManager getInstance() {
-        if (INSTANCE == null) {
-            INSTANCE = new EconomyManager();
-        }
-        return INSTANCE;
+        return Holder.INSTANCE;
     }
 
     public ExecutorService getIoExecutor() {

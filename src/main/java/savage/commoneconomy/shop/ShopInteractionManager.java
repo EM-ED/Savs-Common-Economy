@@ -23,16 +23,15 @@ import java.util.UUID;
  * Manages pending shop interactions (buying/selling).
  */
 public class ShopInteractionManager {
-    private static ShopInteractionManager instance;
+    private static class Holder {
+        static final ShopInteractionManager INSTANCE = new ShopInteractionManager();
+    }
     private final Map<UUID, PendingInteraction> pendingInteractions = new HashMap<>();
 
     private ShopInteractionManager() {}
 
     public static ShopInteractionManager getInstance() {
-        if (instance == null) {
-            instance = new ShopInteractionManager();
-        }
-        return instance;
+        return Holder.INSTANCE;
     }
 
     public void register() {
