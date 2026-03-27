@@ -46,8 +46,9 @@ public class ConfigManager {
             currentConfig = GSON.fromJson(reader, EconomyConfig.class);
             if (currentConfig == null) {
                 currentConfig = new EconomyConfig();
-                saveMain();
             }
+            // Force save to embed any new config fields added in mod updates
+            saveMain();
             SavsCommonEconomy.LOGGER.info("Successfully loaded configuration.");
         } catch (IOException e) {
             SavsCommonEconomy.LOGGER.error("Failed to load configuration!", e);
