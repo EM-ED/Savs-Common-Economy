@@ -32,27 +32,32 @@ public class BankNoteListener {
                             double valueDouble = tag.getDouble("Value").orElse(0.0);
                             BigDecimal value = BigDecimal.valueOf(valueDouble);
                             
+                            // ANTI-DUPE: Consume the note IMMEDIATELY on the main thread
+                            // before going async. This prevents spam-clicking from queuing
+                            // multiple addBalance calls for the same note.
+                            stack.shrink(1);
+                            
                             var server = ((net.minecraft.server.level.ServerLevel) world).getServer();
                             EconomyManager.getInstance().addBalance(player.getUUID(), value).thenAccept(success -> {
-                                // Must run inventory changes on main server thread
                                 server.execute(() -> {
                                     if (success) {
-                                        // Only consume the note AFTER balance was successfully added
-                                        var currentStack = player.getItemInHand(hand);
-                                        if (currentStack.is(Items.PAPER)) {
-                                            CustomData cd = currentStack.get(DataComponents.CUSTOM_DATA);
-                                            if (cd != null) {
-                                                CompoundTag t = cd.copyTag();
-                                                if (t.contains("EconomyBankNote")) {
-                                                    currentStack.shrink(1);
-                                                }
-                                            }
-                                        }
                                         player.sendSystemMessage(Component.literal("Redeemed bank note for " + EconomyManager.getInstance().format(value))
                                             .withStyle(ChatFormatting.GREEN));
                                         TransactionLogger.log("DEPOSIT", "Bank Note", player.getName().getString(), value, "Redeemed Note");
                                     } else {
-                                        player.sendSystemMessage(Component.literal("Failed to deposit bank note! Please try again.")
+                                        // Balance add failed — restore the note to prevent item loss
+                                        ItemStack restored = new ItemStack(Items.PAPER);
+                                        CompoundTag restoreTag = new CompoundTag();
+                                        restoreTag.putBoolean("EconomyBankNote", true);
+                                        restoreTag.putDouble("Value", valueDouble);
+                                        restored.set(DataComponents.CUSTOM_DATA, CustomData.of(restoreTag));
+                                        restored.set(DataComponents.CUSTOM_NAME,
+                                            Component.literal("Bank Note: " + EconomyManager.getInstance().format(value))
+                                                .withStyle(ChatFormatting.GREEN));
+                                        if (!player.getInventory().add(restored)) {
+                                            player.drop(restored, false);
+                                        }
+                                        player.sendSystemMessage(Component.literal("Failed to deposit bank note! Note has been returned.")
                                             .withStyle(ChatFormatting.RED));
                                     }
                                 });
