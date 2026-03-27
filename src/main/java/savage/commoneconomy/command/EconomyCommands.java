@@ -83,7 +83,7 @@ public class EconomyCommands {
 
     private static int checkSelfBalance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         ServerPlayer player = context.getSource().getPlayer();
-        EconomyManager.getInstance().getOrCreateAccount(player.getUUID(), player.getName().getString())
+        EconomyManager.getInstance().getOrCreateAccount(player.getUUID(), player.getGameProfile().name())
             .thenAccept(account -> {
                 BigDecimal balance = account.getBalance();
                 context.getSource().sendSuccess(() -> Component.literal("Your balance: " + EconomyManager.getInstance().format(balance)), false);
@@ -100,9 +100,9 @@ public class EconomyCommands {
                 return;
             }
 
-            EconomyManager.getInstance().getOrCreateAccount(targetUUID, targetName).thenAccept(account -> {
+            EconomyManager.getInstance().getOrCreateAccount(targetUUID, null).thenAccept(account -> {
                 BigDecimal balance = account.getBalance();
-                context.getSource().sendSuccess(() -> Component.literal(targetName + "'s balance: " + EconomyManager.getInstance().format(balance)), false);
+                context.getSource().sendSuccess(() -> Component.literal(account.getName() + "'s balance: " + EconomyManager.getInstance().format(balance)), false);
             });
         });
         

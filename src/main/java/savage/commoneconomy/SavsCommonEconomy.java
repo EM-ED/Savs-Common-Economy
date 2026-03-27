@@ -37,7 +37,7 @@ public class SavsCommonEconomy implements ModInitializer {
 
 		// Register Player Join Hook
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-			EconomyManager.getInstance().getOrCreateAccount(handler.getPlayer().getUUID(), handler.getPlayer().getName().getString());
+			EconomyManager.getInstance().getOrCreateAccount(handler.getPlayer().getUUID(), handler.getPlayer().getGameProfile().name());
 		});
 
 		// Register Shutdown Hook
