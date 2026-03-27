@@ -184,6 +184,8 @@ public class ShopInteractionManager {
                             }
                         }
                     }
+                    // Persist updated stock values to disk
+                    ShopManager.getInstance().save();
                 }
             }
             

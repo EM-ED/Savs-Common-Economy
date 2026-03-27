@@ -163,7 +163,14 @@ public class ShopManager {
         String ownerId;
         String ownerName;
         String type;
-        String itemStackBase64;
+        
+        // Legacy item fields
+        String itemId;
+        int itemCount;
+        
+        // Exact 1:1 match with original mod
+        String itemStackSnbt;
+        
         String price;
         boolean buying;
         int stock;
@@ -179,15 +186,28 @@ public class ShopManager {
             this.buying = shop.isBuying();
             this.stock = shop.getStock();
 
-            // Encode ItemStack to Base64 NBT
-            try {
-                RegistryOps<Tag> ops = server.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
-                CompoundTag nbt = (CompoundTag) ItemStack.CODEC.encodeStart(ops, shop.getItem()).getOrThrow();
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                NbtIo.writeCompressed(nbt, baos);
-                this.itemStackBase64 = Base64.getEncoder().encodeToString(baos.toByteArray());
-            } catch (Exception e) {
-                SavsCommonEconomy.LOGGER.error("Failed to encode item stack for shop " + shopId, e);
+            ItemStack item = shop.getItem();
+            
+            // Populate legacy fields for max compatibility
+            if (!item.isEmpty()) {
+                this.itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.getItem()).toString();
+                this.itemCount = item.getCount();
+            } else {
+                this.itemId = "minecraft:air";
+                this.itemCount = 0;
+            }
+
+            // Encode ItemStack to Base64 NBT if not empty
+            if (server != null && !item.isEmpty() && item.getItem() != net.minecraft.world.item.Items.AIR) {
+                try {
+                    RegistryOps<Tag> ops = server.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
+                    CompoundTag nbt = (CompoundTag) ItemStack.CODEC.encodeStart(ops, item).getOrThrow();
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    NbtIo.writeCompressed(nbt, baos);
+                    this.itemStackSnbt = Base64.getEncoder().encodeToString(baos.toByteArray());
+                } catch (Exception e) {
+                    SavsCommonEconomy.LOGGER.error("Failed to encode item stack for shop " + shopId, e);
+                }
             }
         }
 
@@ -199,9 +219,10 @@ public class ShopManager {
             BigDecimal p = new BigDecimal(this.price);
 
             ItemStack itemStack = ItemStack.EMPTY;
-            if (this.itemStackBase64 != null) {
+
+            if (this.itemStackSnbt != null && server != null) {
                 try {
-                    byte[] bytes = Base64.getDecoder().decode(this.itemStackBase64);
+                    byte[] bytes = Base64.getDecoder().decode(this.itemStackSnbt);
                     ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
                     CompoundTag nbt = NbtIo.readCompressed(bais, net.minecraft.nbt.NbtAccounter.unlimitedHeap());
                     RegistryOps<Tag> ops = server.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
@@ -209,6 +230,12 @@ public class ShopManager {
                 } catch (Exception e) {
                     SavsCommonEconomy.LOGGER.error("Failed to decode item stack for shop " + shopId, e);
                 }
+            } else if (this.itemId != null && !this.itemId.equals("minecraft:air")) {
+                // Fallback for very old shops without base64 NBT
+                net.minecraft.world.item.Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.Identifier.parse(this.itemId))
+                    .map(ref -> ref.value())
+                    .orElse(net.minecraft.world.item.Items.AIR);
+                itemStack = new ItemStack(item, this.itemCount);
             }
 
             return new Shop(id, worldId, pos, owner, ownerName, shopType, itemStack, p, buying, stock);
