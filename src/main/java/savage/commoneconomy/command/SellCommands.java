@@ -121,7 +121,7 @@ public class SellCommands {
             return 1;
         }
 
-        context.getSource().sendSuccess(() -> Component.literal("--- Item Worth ---"), false);
+        context.getSource().sendSuccess(() -> Component.literal("--- Item Worth ---").withStyle(net.minecraft.ChatFormatting.GOLD, net.minecraft.ChatFormatting.BOLD), false);
         for (String item : allItems) {
             BigDecimal sell = sellPrices.getOrDefault(item, BigDecimal.ZERO);
             BigDecimal buy = buyPrices.getOrDefault(item, BigDecimal.ZERO);
@@ -129,7 +129,16 @@ public class SellCommands {
             String sellStr = sell.compareTo(BigDecimal.ZERO) > 0 ? EconomyManager.getInstance().format(sell) : "N/A";
             String buyStr = buy.compareTo(BigDecimal.ZERO) > 0 ? EconomyManager.getInstance().format(buy) : "N/A";
             
-            context.getSource().sendSuccess(() -> Component.literal("- " + item + " | Buy: " + buyStr + " | Sell: " + sellStr), false);
+            Component line = Component.literal("- ").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)
+                .append(Component.literal(item).withStyle(net.minecraft.ChatFormatting.AQUA))
+                .append(Component.literal(" | ").withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
+                .append(Component.literal("Buy: ").withStyle(net.minecraft.ChatFormatting.YELLOW))
+                .append(Component.literal(buyStr).withStyle(buy.compareTo(BigDecimal.ZERO) > 0 ? net.minecraft.ChatFormatting.GREEN : net.minecraft.ChatFormatting.DARK_RED))
+                .append(Component.literal(" | ").withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
+                .append(Component.literal("Sell: ").withStyle(net.minecraft.ChatFormatting.YELLOW))
+                .append(Component.literal(sellStr).withStyle(sell.compareTo(BigDecimal.ZERO) > 0 ? net.minecraft.ChatFormatting.GREEN : net.minecraft.ChatFormatting.DARK_RED));
+            
+            context.getSource().sendSuccess(() -> line, false);
         }
         return 1;
     }
