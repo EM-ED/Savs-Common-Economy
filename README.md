@@ -117,9 +117,9 @@ Set these to `ACTION_BAR` (shows briefly above the hotbar), `CHAT` (standard cha
 ---
 
 ## Permissions & OP Levels
-The mod uses standard Vanilla OP Levels for permissions.
+The mod supports LuckPerms and the Fabric Permissions API.
 
-Open the `config/savs-common-economy/permissions.json` file to easily change what OP level is required for each command. Most standard player commands default to OP level 0 (everyone), while admin commands default to OP level 2.
+If you aren't using a permissions manager, we gracefully fall back to standard Vanilla OP Levels. Open the `config/savs-common-economy/permissions.json` file to easily change what OP level is required for each command. Most standard player commands default to OP level 0 (everyone), while admin commands default to OP level 2.
 
 Here is a list of all current permission nodes you can change in the config:
 
