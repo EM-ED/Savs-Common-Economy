@@ -21,9 +21,11 @@ public class ConfigManager {
     private static final java.nio.file.Path CONFIG_DIR = FabricLoader.getInstance().getConfigDir().resolve("savs-common-economy");
     private static final File CONFIG_FILE = CONFIG_DIR.resolve("config.json").toFile();
     private static final File WORTH_FILE = CONFIG_DIR.resolve("worth.json").toFile();
+    private static final File PERMISSIONS_FILE = CONFIG_DIR.resolve("permissions.json").toFile();
     
     private static EconomyConfig currentConfig = new EconomyConfig();
     private static WorthConfig worthConfig = new WorthConfig();
+    private static PermissionsConfig permissionsConfig = new PermissionsConfig();
 
     /**
      * Loads the config from disk, or saves default if it doesn't exist.
@@ -31,6 +33,7 @@ public class ConfigManager {
     public static void load() {
         loadMain();
         loadWorth();
+        loadPermissions();
     }
 
     private static void loadMain() {
@@ -57,6 +60,7 @@ public class ConfigManager {
     public static void save() {
         saveMain();
         saveWorth();
+        savePermissions();
     }
 
     private static void saveMain() {
@@ -139,5 +143,56 @@ public class ConfigManager {
      */
     public static WorthConfig getWorth() {
         return worthConfig;
+    }
+
+    /**
+     * @return The active permissions configuration instance.
+     */
+    public static PermissionsConfig getPermissions() {
+        return permissionsConfig;
+    }
+
+    private static void loadPermissions() {
+        if (!PERMISSIONS_FILE.exists()) {
+            savePermissions();
+            return;
+        }
+
+        try (FileReader reader = new FileReader(PERMISSIONS_FILE)) {
+            PermissionsConfig loaded = GSON.fromJson(reader, PermissionsConfig.class);
+            if (loaded == null || loaded.permissions == null) {
+                permissionsConfig = new PermissionsConfig();
+                savePermissions();
+            } else {
+                // Merge: add any new permission nodes that aren't in the file yet
+                PermissionsConfig defaults = new PermissionsConfig();
+                boolean changed = false;
+                for (var entry : defaults.permissions.entrySet()) {
+                    if (!loaded.permissions.containsKey(entry.getKey())) {
+                        loaded.permissions.put(entry.getKey(), entry.getValue());
+                        changed = true;
+                        SavsCommonEconomy.LOGGER.info("Added new permission node: {} (default: {})", entry.getKey(), entry.getValue());
+                    }
+                }
+                permissionsConfig = loaded;
+                if (changed) savePermissions();
+            }
+            SavsCommonEconomy.LOGGER.info("Successfully loaded permissions.json.");
+        } catch (IOException e) {
+            SavsCommonEconomy.LOGGER.error("Failed to load permissions.json!", e);
+        }
+    }
+
+    private static void savePermissions() {
+        try {
+            File dir = CONFIG_DIR.toFile();
+            if (!dir.exists()) dir.mkdirs();
+            try (FileWriter writer = new FileWriter(PERMISSIONS_FILE)) {
+                GSON.toJson(permissionsConfig, writer);
+                SavsCommonEconomy.LOGGER.info("Successfully saved permissions.json.");
+            }
+        } catch (IOException e) {
+            SavsCommonEconomy.LOGGER.error("Failed to save permissions.json!", e);
+        }
     }
 }
