@@ -264,6 +264,10 @@ public class EconomyManager {
         return Collections.unmodifiableMap(ConfigManager.getWorth().sellPrices);
     }
 
+    public Map<String, BigDecimal> getAllBuyPrices() {
+        return Collections.unmodifiableMap(ConfigManager.getWorth().buyPrices);
+    }
+
     /**
      * Looks up a UUID by player name from the storage asynchronously.
      */

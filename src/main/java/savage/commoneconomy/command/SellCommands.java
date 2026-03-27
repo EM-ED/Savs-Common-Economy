@@ -109,15 +109,27 @@ public class SellCommands {
     }
 
     private static int listWorth(CommandContext<CommandSourceStack> context) {
-        Map<String, BigDecimal> prices = EconomyManager.getInstance().getAllSellPrices();
-        if (prices.isEmpty()) {
-            context.getSource().sendSuccess(() -> Component.literal("No items are currently sellable."), false);
+        Map<String, BigDecimal> sellPrices = EconomyManager.getInstance().getAllSellPrices();
+        Map<String, BigDecimal> buyPrices = EconomyManager.getInstance().getAllBuyPrices();
+        
+        java.util.Set<String> allItems = new java.util.TreeSet<>();
+        allItems.addAll(sellPrices.keySet());
+        allItems.addAll(buyPrices.keySet());
+
+        if (allItems.isEmpty()) {
+            context.getSource().sendSuccess(() -> Component.literal("No items have a configured worth."), false);
             return 1;
         }
 
-        context.getSource().sendSuccess(() -> Component.literal("--- Sellable Items ---"), false);
-        for (Map.Entry<String, BigDecimal> entry : prices.entrySet()) {
-            context.getSource().sendSuccess(() -> Component.literal("- " + entry.getKey() + ": " + EconomyManager.getInstance().format(entry.getValue())), false);
+        context.getSource().sendSuccess(() -> Component.literal("--- Item Worth ---"), false);
+        for (String item : allItems) {
+            BigDecimal sell = sellPrices.getOrDefault(item, BigDecimal.ZERO);
+            BigDecimal buy = buyPrices.getOrDefault(item, BigDecimal.ZERO);
+            
+            String sellStr = sell.compareTo(BigDecimal.ZERO) > 0 ? EconomyManager.getInstance().format(sell) : "N/A";
+            String buyStr = buy.compareTo(BigDecimal.ZERO) > 0 ? EconomyManager.getInstance().format(buy) : "N/A";
+            
+            context.getSource().sendSuccess(() -> Component.literal("- " + item + " | Buy: " + buyStr + " | Sell: " + sellStr), false);
         }
         return 1;
     }
