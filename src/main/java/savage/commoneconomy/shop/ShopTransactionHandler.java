@@ -16,10 +16,11 @@ import java.math.BigDecimal;
  */
 public class ShopTransactionHandler {
 
-    public static void handlePurchase(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world, int amount) {
+    public static void handlePurchase(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world,
+            int amount) {
         BigDecimal unitPrice = shop.getPrice();
         BigDecimal totalCost = unitPrice.multiply(BigDecimal.valueOf(amount));
-        
+
         // 1. Initial Checks (Main Thread)
         if (!shop.isAdmin() && !shop.canSell(amount)) {
             player.sendSystemMessage(Component.literal("§cShop is out of stock!"));
@@ -36,8 +37,10 @@ public class ShopTransactionHandler {
                         if (!shop.isAdmin()) {
                             EconomyManager.getInstance().addBalance(shop.getOwnerId(), totalCost);
                         }
-                        player.sendSystemMessage(Component.literal("§aTransaction successful! Bought " + amount + "x items."));
-                        
+                        String itemName = shop.getItem().getHoverName().getString();
+                        player.sendSystemMessage(Component.literal("§aBought " + amount + "x " + itemName + " for "
+                                + EconomyManager.getInstance().format(totalCost) + "."));
+
                         BlockPos signPos = ShopSignHelper.findSignForChest(world, shop.getChestLocation());
                         if (signPos != null) {
                             ShopSignHelper.updateSign(world, signPos, shop);
@@ -50,21 +53,23 @@ public class ShopTransactionHandler {
                     }
                 });
             } else {
-                player.sendSystemMessage(Component.literal("§cInsufficient funds! (Need " + EconomyManager.getInstance().format(totalCost) + ")"));
+                player.sendSystemMessage(Component.literal(
+                        "§cInsufficient funds! (Need " + EconomyManager.getInstance().format(totalCost) + ")"));
             }
         });
     }
 
     public static void handlePurchase(ServerPlayer player, Shop shop, Level world) {
-        handlePurchase(player, shop, (net.minecraft.server.level.ServerLevel)world, 1);
+        handlePurchase(player, shop, (net.minecraft.server.level.ServerLevel) world, 1);
     }
 
-    private static boolean finalizePurchase(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world, int amount) {
+    private static boolean finalizePurchase(ServerPlayer player, Shop shop,
+            net.minecraft.server.level.ServerLevel world, int amount) {
         BlockPos chestPos = shop.getChestLocation();
         BlockEntity be = world.getBlockEntity(chestPos);
         ItemStack template = shop.getItem().copy();
         template.setCount(amount);
-        
+
         if (shop.isAdmin()) {
             // Admin shop: just give items
             player.getInventory().add(template);
@@ -83,7 +88,8 @@ public class ShopTransactionHandler {
         return false;
     }
 
-    public static void handleSale(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world, int amount) {
+    public static void handleSale(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world,
+            int amount) {
         BigDecimal unitPrice = shop.getPrice();
         BigDecimal totalPayout = unitPrice.multiply(BigDecimal.valueOf(amount));
         ItemStack template = shop.getItem();
@@ -106,17 +112,19 @@ public class ShopTransactionHandler {
         // 2. Asynchronous Owner Balance Check (If not admin)
         if (shop.isAdmin()) {
             finalizeSale(player, shop, world, amount);
-            EconomyManager.getInstance().addBalance(player.getUUID(), totalPayout);
-            player.sendSystemMessage(Component.literal("§aSold " + amount + "x items to Admin Shop!"));
+            String itemName = shop.getItem().getHoverName().getString();
+            player.sendSystemMessage(Component.literal("§aSold " + amount + "x " + itemName + " to Admin Shop for "
+                    + EconomyManager.getInstance().format(totalPayout) + "!"));
         } else {
             // Check if shop owner can afford it
             EconomyManager.getInstance().removeBalance(shop.getOwnerId(), totalPayout).thenAccept(success -> {
                 if (success) {
                     world.getServer().execute(() -> {
                         if (finalizeSale(player, shop, world, finalAmount)) {
-                            EconomyManager.getInstance().addBalance(player.getUUID(), finalPayout);
-                            player.sendSystemMessage(Component.literal("§aSold " + finalAmount + "x items to shop!"));
-                            
+                            String itemName = shop.getItem().getHoverName().getString();
+                            player.sendSystemMessage(Component.literal("§aSold " + finalAmount + "x " + itemName
+                                    + " to shop for " + EconomyManager.getInstance().format(finalPayout) + "."));
+
                             BlockPos signPos = ShopSignHelper.findSignForChest(world, shop.getChestLocation());
                             if (signPos != null) {
                                 ShopSignHelper.updateSign(world, signPos, shop);
@@ -135,10 +143,12 @@ public class ShopTransactionHandler {
         }
     }
 
-    private static boolean finalizeSale(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world, int amount) {
+    private static boolean finalizeSale(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world,
+            int amount) {
         ItemStack template = shop.getItem();
         if (removeItemsFromPlayer(player, template, amount)) {
-            if (shop.isAdmin()) return true;
+            if (shop.isAdmin())
+                return true;
 
             BlockEntity be = world.getBlockEntity(shop.getChestLocation());
             if (be instanceof Container container) {
@@ -160,7 +170,8 @@ public class ShopTransactionHandler {
         int count = 0;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             ItemStack stack = player.getInventory().getItem(i);
-            if (ItemStack.isSameItemSameComponents(stack, template)) count += stack.getCount();
+            if (ItemStack.isSameItemSameComponents(stack, template))
+                count += stack.getCount();
         }
         return count;
     }
@@ -182,9 +193,11 @@ public class ShopTransactionHandler {
         int available = 0;
         for (int i = 0; i < container.getContainerSize(); i++) {
             ItemStack stack = container.getItem(i);
-            if (ItemStack.isSameItemSameComponents(stack, template)) available += stack.getCount();
+            if (ItemStack.isSameItemSameComponents(stack, template))
+                available += stack.getCount();
         }
-        if (available < amount) return false;
+        if (available < amount)
+            return false;
 
         // Perform removal
         for (int i = 0; i < container.getContainerSize() && amount > 0; i++) {
