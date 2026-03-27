@@ -117,6 +117,9 @@ public class ConfigManager {
 
     private static void loadWorth() {
         if (!WORTH_FILE.exists()) {
+            worthConfig = new WorthConfig();
+            worthConfig.sellPrices.put("minecraft:apple", new java.math.BigDecimal("10.00"));
+            worthConfig.buyPrices.put("minecraft:apple", new java.math.BigDecimal("20.00"));
             saveWorth();
             return;
         }
@@ -128,7 +131,19 @@ public class ConfigManager {
             if (rawJson != null && rawJson.has("itemPrices") && !rawJson.has("sellPrices")) {
                 // Migrate old format: copy itemPrices to sellPrices
                 SavsCommonEconomy.LOGGER.info("Migrating legacy worth.json: renaming 'itemPrices' to 'sellPrices'...");
-                rawJson.add("sellPrices", rawJson.get("itemPrices"));
+                
+                com.google.gson.JsonElement oldPrices = rawJson.get("itemPrices");
+                rawJson.add("sellPrices", oldPrices);
+                
+                // Generate buyPrices dynamically (double the sell price)
+                com.google.gson.JsonObject buyPrices = new com.google.gson.JsonObject();
+                if (oldPrices.isJsonObject()) {
+                    for (java.util.Map.Entry<String, com.google.gson.JsonElement> entry : oldPrices.getAsJsonObject().entrySet()) {
+                        double sellPrice = entry.getValue().getAsDouble();
+                        buyPrices.addProperty(entry.getKey(), sellPrice * 2.0);
+                    }
+                }
+                rawJson.add("buyPrices", buyPrices);
                 rawJson.remove("itemPrices");
                 
                 // Parse the migrated JSON

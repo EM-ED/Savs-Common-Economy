@@ -15,8 +15,6 @@ public class WorthConfig {
     public Map<String, BigDecimal> buyPrices = new HashMap<>();
 
     public WorthConfig() {
-        // Defaults (original match)
-        sellPrices.put("minecraft:apple", new BigDecimal("10.00"));
-        buyPrices.put("minecraft:apple", new BigDecimal("20.00"));
+        // Defaults are now added by ConfigManager ONLY when generating a fresh file
     }
 }
