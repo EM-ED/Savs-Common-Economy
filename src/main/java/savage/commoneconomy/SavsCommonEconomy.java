@@ -16,6 +16,11 @@ import savage.commoneconomy.util.TransactionLogger;
 public class SavsCommonEconomy implements ModInitializer {
 	public static final String MOD_ID = "savs-common-economy";
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+	public static net.minecraft.server.MinecraftServer server;
+
+	public static net.minecraft.server.MinecraftServer getServer() {
+		return server;
+	}
 
 	@Override
 	public void onInitialize() {
@@ -54,12 +59,13 @@ public class SavsCommonEconomy implements ModInitializer {
 		eu.pb4.common.economy.api.CommonEconomy.register("savs_common_economy", savage.commoneconomy.integration.SavsEconomyProvider.INSTANCE);
 
 		// Initialize Shop System on Server Start (only if enabled)
-		if (ConfigManager.getConfig().enableChestShops) {
-			net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+			SavsCommonEconomy.server = server;
+			if (ConfigManager.getConfig().enableChestShops) {
 				ShopManager.getInstance().setServer(server);
 				ShopManager.getInstance().load();
 				ShopInteractionManager.getInstance().register();
-			});
-		}
+			}
+		});
 	}
 }

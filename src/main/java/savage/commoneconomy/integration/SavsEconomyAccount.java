@@ -58,6 +58,49 @@ public class SavsEconomyAccount implements EconomyAccount {
     @Override
     public void setBalance(BigInteger value) {
         EconomyManager.getInstance().setBalance(profile.id(), new BigDecimal(value));
+        if (currency instanceof SavsEconomyCurrency ecoCurrency) {
+            sendFeedback("§e[Economy] Balance set to " + ecoCurrency.formatValue(value, true));
+        }
+    }
+
+    @Override
+    public EconomyTransaction increaseBalance(BigInteger value) {
+        BigInteger current = balance();
+        BigInteger next = current.add(value);
+        setBalance(next);
+        if (currency instanceof SavsEconomyCurrency ecoCurrency) {
+            sendFeedback("§e[Economy] §a+" + ecoCurrency.formatValue(value, true));
+        }
+        return new EconomyTransaction.Simple(true, Component.literal("Success"), next, current, value, this);
+    }
+
+    @Override
+    public EconomyTransaction decreaseBalance(BigInteger value) {
+        BigInteger current = balance();
+        if (current.compareTo(value) >= 0) {
+            BigInteger next = current.subtract(value);
+            setBalance(next);
+            if (currency instanceof SavsEconomyCurrency ecoCurrency) {
+                sendFeedback("§e[Economy] §c-" + ecoCurrency.formatValue(value, true));
+            }
+            return new EconomyTransaction.Simple(true, Component.literal("Success"), next, current, value.negate(), this);
+        } else {
+            return new EconomyTransaction.Simple(false, Component.literal("Insufficient funds"), current, current, value.negate(), this);
+        }
+    }
+
+    private void sendFeedback(String message) {
+        net.minecraft.server.MinecraftServer server = savage.commoneconomy.SavsCommonEconomy.getServer();
+        if (server != null) {
+            net.minecraft.server.level.ServerPlayer player = server.getPlayerList().getPlayer(profile.id());
+            if (player != null) {
+                var config = savage.commoneconomy.config.ConfigManager.getConfig();
+                boolean overlay = (config.apiNotificationMode == savage.commoneconomy.config.EconomyConfig.NotificationMode.ACTION_BAR);
+                server.execute(() -> {
+                    player.sendSystemMessage(Component.literal(message), overlay);
+                });
+            }
+        }
     }
 
     @Override
