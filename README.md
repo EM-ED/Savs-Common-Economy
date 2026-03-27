@@ -10,7 +10,7 @@ A lightweight, **server-side only** economy mod for Minecraft 26.1 (Fabric), des
 *   **Common Economy API**: Full support for the [Common Economy API v2](https://github.com/Patbox/common-economy-api), integrating with Universal Shops, Mob Money, and other compliant economy mods.
 *   **Offline Transactions**: Perform seamless administrative actions and payments to players even when they are offline!
 *   **Chest Shops**: Player shops! Create buy and sell chest shops using vanilla signs.
-*   **Worth System**: Configure custom `buyPrices` and `sellPrices` inside `worth.json` to allow players to directly trade with the server.
+*   **Buy & Sell System**: Quickly configure official server prices and empower your players to directly trade with the server using `/buy` and `/sell` commands! (Customizable via `worth.json`).
 *   **Bank Notes**: Players can withdraw their digital balance into physical vanilla paper items to trade or stash away.
 *   **Transaction Logging**: Searchable in-game transaction ledger for server admins (`/ecolog`).
 *   **Vanilla Permissions Setup**: Easily configure command access levels using the `permissions.json` config using vanilla OP clearance levels.
