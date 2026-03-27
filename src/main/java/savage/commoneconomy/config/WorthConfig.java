@@ -15,15 +15,8 @@ public class WorthConfig {
     public Map<String, BigDecimal> buyPrices = new HashMap<>();
 
     public WorthConfig() {
-        // Defaults
-        sellPrices.put("minecraft:diamond", new BigDecimal("100.00"));
-        sellPrices.put("minecraft:gold_ingot", new BigDecimal("50.00"));
-        sellPrices.put("minecraft:iron_ingot", new BigDecimal("10.00"));
-        sellPrices.put("minecraft:emerald", new BigDecimal("200.00"));
-        
-        buyPrices.put("minecraft:diamond", new BigDecimal("200.00"));
-        buyPrices.put("minecraft:gold_ingot", new BigDecimal("100.00"));
-        buyPrices.put("minecraft:iron_ingot", new BigDecimal("20.00"));
-        buyPrices.put("minecraft:emerald", new BigDecimal("400.00"));
+        // Defaults (original match)
+        sellPrices.put("minecraft:apple", new BigDecimal("10.00"));
+        buyPrices.put("minecraft:apple", new BigDecimal("20.00"));
     }
 }
