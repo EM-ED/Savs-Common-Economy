@@ -11,6 +11,11 @@ public class AccountData {
     private BigDecimal balance;
     private long version; // For optimistic locking
 
+    // No-arg constructor required for Gson deserialization (migration from old mod)
+    public AccountData() {
+        this("Unknown", java.math.BigDecimal.ZERO, 0L);
+    }
+
     public AccountData(String name, BigDecimal balance) {
         this(name, balance, 0L);
     }

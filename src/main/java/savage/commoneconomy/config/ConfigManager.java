@@ -52,6 +52,43 @@ public class ConfigManager {
         } catch (IOException e) {
             SavsCommonEconomy.LOGGER.error("Failed to load configuration!", e);
         }
+
+        // Auto-migrate old Savs-Redis-Lib config (savs-redis.json) if present
+        migrateOldRedisConfig();
+    }
+
+    /**
+     * Migrates settings from the old savs-redis.json (Savs-Redis-Lib) into config.json.
+     * Only runs once — renames the old file after migration to prevent re-migration.
+     */
+    private static void migrateOldRedisConfig() {
+        File oldRedisConfig = FabricLoader.getInstance().getConfigDir().resolve("savs-redis.json").toFile();
+        if (!oldRedisConfig.exists()) return;
+
+        SavsCommonEconomy.LOGGER.info("Found old savs-redis.json — migrating Redis settings into config.json...");
+        try (FileReader reader = new FileReader(oldRedisConfig)) {
+            com.google.gson.JsonObject oldConfig = GSON.fromJson(reader, com.google.gson.JsonObject.class);
+            if (oldConfig != null) {
+                EconomyConfig.RedisConfig redis = currentConfig.redis;
+                if (oldConfig.has("host")) redis.host = oldConfig.get("host").getAsString();
+                if (oldConfig.has("port")) redis.port = oldConfig.get("port").getAsInt();
+                if (oldConfig.has("password")) redis.password = oldConfig.get("password").getAsString();
+                if (oldConfig.has("timeout_ms")) redis.timeout_ms = oldConfig.get("timeout_ms").getAsInt();
+                if (oldConfig.has("client_name")) redis.client_name = oldConfig.get("client_name").getAsString();
+                redis.enabled = true;
+
+                saveMain();
+                SavsCommonEconomy.LOGGER.info("Successfully migrated Redis settings into config.json.");
+
+                // Rename old file to prevent re-migration
+                File backup = new File(oldRedisConfig.getParent(), "savs-redis.json.migrated");
+                if (oldRedisConfig.renameTo(backup)) {
+                    SavsCommonEconomy.LOGGER.info("Renamed old savs-redis.json to savs-redis.json.migrated");
+                }
+            }
+        } catch (IOException e) {
+            SavsCommonEconomy.LOGGER.warn("Failed to migrate old Redis config — you may need to configure Redis manually in config.json", e);
+        }
     }
 
     /**
