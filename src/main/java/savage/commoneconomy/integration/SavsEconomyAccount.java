@@ -52,12 +52,15 @@ public class SavsEconomyAccount implements EconomyAccount {
     public BigInteger balance() {
         // WARNING: Blocking call for API compatibility. 
         // We use join() here, but in practice the balance should be in our Caffeine cache.
-        return EconomyManager.getInstance().getBalance(profile.id()).join().toBigInteger();
+        // Scale the balance up by 100 so the API sees cents as raw whole units.
+        return EconomyManager.getInstance().getBalance(profile.id()).join()
+            .multiply(new BigDecimal("100")).toBigInteger();
     }
 
     @Override
     public void setBalance(BigInteger value) {
-        EconomyManager.getInstance().setBalance(profile.id(), new BigDecimal(value));
+        // Divide by 100 when receiving values from the API to translate raw units back into dollars.
+        EconomyManager.getInstance().setBalance(profile.id(), new BigDecimal(value).divide(new BigDecimal("100")));
         if (currency instanceof SavsEconomyCurrency ecoCurrency) {
             sendFeedback("§e[Economy] Balance set to " + ecoCurrency.formatValue(value, true));
         }

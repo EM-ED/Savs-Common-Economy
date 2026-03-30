@@ -7,6 +7,7 @@ import eu.pb4.common.economy.api.EconomyProvider;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import savage.commoneconomy.EconomyManager;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 
 public class SavsEconomyCurrency implements EconomyCurrency {
@@ -28,7 +29,8 @@ public class SavsEconomyCurrency implements EconomyCurrency {
 
     @Override
     public String formatValue(BigInteger value, boolean full) {
-        return EconomyManager.getInstance().format(new java.math.BigDecimal(value));
+        // Divide the raw BigInteger by 100 before formatting to show the decimal point.
+        return EconomyManager.getInstance().format(new BigDecimal(value).divide(new BigDecimal("100")));
     }
 
     @Override
@@ -39,7 +41,8 @@ public class SavsEconomyCurrency implements EconomyCurrency {
     @Override
     public BigInteger parseValue(String value) {
         try {
-            return new java.math.BigDecimal(value).toBigInteger();
+            // Multiply the user input by 100 to convert dollars to raw subunits (cents).
+            return new BigDecimal(value).multiply(new BigDecimal("100")).toBigInteger();
         } catch (Exception e) {
             return BigInteger.ZERO;
         }
