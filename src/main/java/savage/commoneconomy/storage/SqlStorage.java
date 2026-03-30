@@ -6,7 +6,6 @@ import savage.commoneconomy.SavsCommonEconomy;
 import savage.commoneconomy.config.ConfigManager;
 import savage.commoneconomy.model.AccountData;
 
-import java.math.BigDecimal;
 import java.sql.*;
 import java.util.HashMap;
 import java.util.Map;

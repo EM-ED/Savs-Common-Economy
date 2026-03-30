@@ -10,7 +10,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
 import savage.commoneconomy.EconomyManager;
-import savage.commoneconomy.SavsCommonEconomy;
 import savage.commoneconomy.util.TransactionLogger;
 
 import java.math.BigDecimal;
