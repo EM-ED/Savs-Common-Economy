@@ -41,8 +41,12 @@ public class SavsEconomyCurrency implements EconomyCurrency {
     @Override
     public BigInteger parseValue(String value) {
         try {
+            if (value == null || value.isEmpty()) return BigInteger.ZERO;
+            // Strip any currency symbols or characters that might be in the input string (e.g. "$", ",")
+            String sanitizedValue = value.replaceAll("[^0-9.\\-]", "");
+            if (sanitizedValue.isEmpty() || sanitizedValue.equals("-") || sanitizedValue.equals(".")) return BigInteger.ZERO;
             // Multiply the user input by 100 to convert dollars to raw subunits (cents).
-            return new BigDecimal(value).multiply(new BigDecimal("100")).toBigInteger();
+            return new BigDecimal(sanitizedValue).multiply(new BigDecimal("100")).toBigInteger();
         } catch (Exception e) {
             return BigInteger.ZERO;
         }
