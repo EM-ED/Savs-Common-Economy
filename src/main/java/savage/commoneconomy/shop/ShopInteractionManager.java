@@ -41,6 +41,21 @@ public class ShopInteractionManager {
             if (!(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
 
             BlockPos pos = hitResult.getBlockPos();
+            
+            // Protect Shop Chests from non-owners
+            if (ShopManager.getInstance().isShopChest(pos)) {
+                Shop shop = ShopManager.getInstance().getShop(pos);
+                if (shop != null) {
+                    boolean isOwner = shop.getOwnerId().equals(serverPlayer.getUUID());
+                    boolean isAdmin = savage.commoneconomy.util.PermissionsHelper.check(serverPlayer, "savscommoneconomy.admin", 2);
+                    
+                    if (!isOwner && !isAdmin) {
+                        serverPlayer.sendSystemMessage(Component.literal("§cThis chest is protected by a shop! Only the owner can open it."));
+                        return InteractionResult.FAIL;
+                    }
+                }
+            }
+
             if (world.getBlockState(pos).getBlock() instanceof WallSignBlock) {
                 BlockPos chestPos = ShopSignHelper.getAttachedChest(world, pos);
                 Shop shop = ShopManager.getInstance().getShop(chestPos);
