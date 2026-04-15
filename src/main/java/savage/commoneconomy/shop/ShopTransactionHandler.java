@@ -111,16 +111,21 @@ public class ShopTransactionHandler {
 
         // 2. Asynchronous Owner Balance Check (If not admin)
         if (shop.isAdmin()) {
-            finalizeSale(player, shop, world, amount);
-            String itemName = shop.getItem().getHoverName().getString();
-            player.sendSystemMessage(Component.literal("§aSold " + amount + "x " + itemName + " to Admin Shop for "
-                    + EconomyManager.getInstance().format(totalPayout) + "!"));
+            if (finalizeSale(player, shop, world, amount)) {
+                EconomyManager.getInstance().addBalance(player.getUUID(), totalPayout);
+                String itemName = shop.getItem().getHoverName().getString();
+                player.sendSystemMessage(Component.literal("§aSold " + amount + "x " + itemName + " to Admin Shop for "
+                        + EconomyManager.getInstance().format(totalPayout) + "!"));
+            }
         } else {
             // Check if shop owner can afford it
             EconomyManager.getInstance().removeBalance(shop.getOwnerId(), totalPayout).thenAccept(success -> {
                 if (success) {
                     world.getServer().execute(() -> {
                         if (finalizeSale(player, shop, world, finalAmount)) {
+                            // Pay the seller
+                            EconomyManager.getInstance().addBalance(player.getUUID(), finalPayout);
+                            
                             String itemName = shop.getItem().getHoverName().getString();
                             player.sendSystemMessage(Component.literal("§aSold " + finalAmount + "x " + itemName
                                     + " to shop for " + EconomyManager.getInstance().format(finalPayout) + "."));
