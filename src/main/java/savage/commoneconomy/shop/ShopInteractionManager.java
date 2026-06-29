@@ -136,7 +136,8 @@ public class ShopInteractionManager {
                         java.math.BigDecimal balance = EconomyManager.getInstance().getCachedBalance(sender.getUUID());
                         int canAfford = balance.divideToIntegralValue(shop.getPrice()).intValue();
                         int shopHas = ShopStockCalculator.calculateStock((ServerLevel)sender.level(), shop);
-                        amount = Math.min(canAfford, shopHas);
+                        int playerCanFit = ShopTransactionHandler.getAvailableSpace(sender, shop.getItem());
+                        amount = Math.min(Math.min(canAfford, shopHas), playerCanFit);
                         if (amount > 2304) amount = 2304;
                     }
                     ShopTransactionHandler.handlePurchase(sender, shop, (ServerLevel)sender.level(), amount);

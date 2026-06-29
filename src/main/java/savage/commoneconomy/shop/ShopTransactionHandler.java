@@ -18,12 +18,29 @@ public class ShopTransactionHandler {
 
     public static void handlePurchase(ServerPlayer player, Shop shop, net.minecraft.server.level.ServerLevel world,
             int amount) {
+        if (amount <= 0) {
+            if (!shop.isAdmin() && !shop.canSell(1)) {
+                player.sendSystemMessage(Component.literal("§cShop is out of stock!"));
+            } else if (getAvailableSpace(player, shop.getItem()) == 0) {
+                player.sendSystemMessage(Component.literal("§cYou do not have enough inventory space!"));
+            } else {
+                player.sendSystemMessage(Component.literal("§cInsufficient funds!"));
+            }
+            return;
+        }
+
         BigDecimal unitPrice = shop.getPrice();
         BigDecimal totalCost = unitPrice.multiply(BigDecimal.valueOf(amount));
 
         // 1. Initial Checks (Main Thread)
         if (!shop.isAdmin() && !shop.canSell(amount)) {
             player.sendSystemMessage(Component.literal("§cShop is out of stock!"));
+            return;
+        }
+
+        int availableSpace = getAvailableSpace(player, shop.getItem());
+        if (availableSpace < amount) {
+            player.sendSystemMessage(Component.literal("§cYou do not have enough inventory space!"));
             return;
         }
 
@@ -239,5 +256,18 @@ public class ShopTransactionHandler {
             }
         }
         return stack.isEmpty();
+    }
+
+    public static int getAvailableSpace(ServerPlayer player, ItemStack template) {
+        int space = 0;
+        for (int i = 0; i < 36; i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (stack.isEmpty()) {
+                space += template.getMaxStackSize();
+            } else if (ItemStack.isSameItemSameComponents(stack, template)) {
+                space += Math.max(0, stack.getMaxStackSize() - stack.getCount());
+            }
+        }
+        return space;
     }
 }
