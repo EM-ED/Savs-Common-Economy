@@ -123,6 +123,14 @@ public class ShopTransactionHandler {
             return;
         }
 
+        if (!shop.isAdmin()) {
+            int availableSpace = ShopStockCalculator.calculateStock(world, shop);
+            if (availableSpace < amount) {
+                player.sendSystemMessage(Component.literal("§cThe shop does not have enough storage space!"));
+                return;
+            }
+        }
+
         final int finalAmount = amount;
         final BigDecimal finalPayout = totalPayout;
 
@@ -249,9 +257,14 @@ public class ShopTransactionHandler {
         if (!stack.isEmpty()) {
             for (int i = 0; i < container.getContainerSize(); i++) {
                 if (container.getItem(i).isEmpty()) {
-                    container.setItem(i, stack.copy());
-                    stack.setCount(0);
-                    break;
+                    int toInsert = Math.min(stack.getCount(), stack.getMaxStackSize());
+                    ItemStack copy = stack.copy();
+                    copy.setCount(toInsert);
+                    container.setItem(i, copy);
+                    stack.shrink(toInsert);
+                    if (stack.isEmpty()) {
+                        break;
+                    }
                 }
             }
         }

@@ -122,6 +122,10 @@ public class ShopInteractionManager {
                             ItemStack stack = sender.getInventory().getItem(i);
                             if (ItemStack.isSameItemSameComponents(stack, shop.getItem())) amount += stack.getCount();
                         }
+                        if (!shop.isAdmin()) {
+                            int shopHasSpace = ShopStockCalculator.calculateStock((ServerLevel)sender.level(), shop);
+                            amount = Math.min(amount, shopHasSpace);
+                        }
                     }
                     ShopTransactionHandler.handleSale(sender, shop, (ServerLevel)sender.level(), amount);
                 } else {
